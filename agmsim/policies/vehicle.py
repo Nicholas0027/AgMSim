@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ..actions import Decision
+from ..observation import clock_seconds
 from .base import Policy, register_policy
 
 
@@ -26,17 +27,42 @@ class OwnerCostVehicle(Policy):
       over the quickest listed driving route. By default on time alone; with ``weigh_fare: true`` only when
       the time saved is also worth more than the fare at the owner's value of time.
     * Charging: the station with the lowest detour, queue and price burden.
+    * With ``settle_min`` it uses its memory: for that many minutes after it changed route it changes
+      again only for a saving of at least ``resettle_saving_min`` minutes. A vehicle that remembers
+      nothing (``memory.decisions: 0``) has nothing to go on, and the rule does nothing.
 
     A myopic heuristic, not an optimal controller.
     """
 
     def __init__(self, transfer_gain_min: float = 3.0, top_up_below_pct: float = 55.0, explain: bool = True,
-                 weigh_fare: bool = False, **params):
+                 weigh_fare: bool = False, settle_min: float = 0.0, resettle_saving_min: float = 5.0, **params):
         super().__init__(**params)
         self.transfer_gain_min = float(transfer_gain_min)
         self.weigh_fare = bool(weigh_fare)
         self.top_up_below_pct = float(top_up_below_pct)
         self.explain = bool(explain)                # attach an explanation when proposing a transfer
+        self.settle_min = float(settle_min)
+        self.resettle_saving_min = float(resettle_saving_min)
+
+    def _settled(self, obs, routes, best):
+        """Minutes since the vehicle last changed route, if that is too recent for this change to be worth it."""
+        if not self.settle_min or best["route"] == 0:
+            return None
+        last = next((item for item in reversed(obs.memory) if item.get("did") == "changed route"), None)
+        if last is None:
+            return None
+        since = (obs.time_s - clock_seconds(last["at"])) / 60.0
+        if since < self.settle_min and routes[0]["eta_min"] - best["eta_min"] < self.resettle_saving_min:
+            return since
+        return None
+
+    def _route(self, obs, routes, best, why: str) -> Decision:
+        since = self._settled(obs, routes, best)
+        if since is not None:
+            return Decision("choose_route", {"route": 0},
+                            f"algorithm: changed route {since:.0f} min ago; staying unless a change saves "
+                            f"{self.resettle_saving_min:g} min or more")
+        return Decision("choose_route", {"route": best["route"]}, why)
 
     @staticmethod
     def _vot(obs):
@@ -71,10 +97,10 @@ class OwnerCostVehicle(Policy):
                                     f"algorithm: bus transfer saves {gain:.1f} min")
             if vot is None:
                 best = min(routes, key=lambda r: (r["eta_min"], r["route"]))
-                return Decision("choose_route", {"route": best["route"]}, "algorithm: fastest known route")
+                return self._route(obs, routes, best, "algorithm: fastest known route")
             per_km = obs.state["driving_cost_usd_per_km"]
             best = min(routes, key=lambda r: (r["toll_usd"] + per_km * r["km"] + vot * r["eta_min"], r["route"]))
-            return Decision("choose_route", {"route": best["route"]}, "algorithm: lowest cost for the owner")
+            return self._route(obs, routes, best, "algorithm: lowest cost for the owner")
         if obs.trigger == "charge":
             return self._station(obs, "algorithm: battery will not reach the destination")
         if obs.trigger == "parked":

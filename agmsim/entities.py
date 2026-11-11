@@ -140,6 +140,7 @@ class Vehicle:
     park_pending: bool = False                # just parked: may decide what to do next
     route_pending: bool = False               # conditions changed: reconsider the route now
     next_route_check: int = 0
+    reckoned: Optional[tuple] = None          # (tick, seconds to go) of the route it last chose, as it reckoned then
     hold_until: int = 0                       # does not move before this tick (deciding how to set off)
     suggested: bool = False                   # already proposed a plan change on this trip
     queued: bool = False                      # held at a traffic light, waiting its turn

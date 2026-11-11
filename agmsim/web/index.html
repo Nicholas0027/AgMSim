@@ -44,7 +44,8 @@ th{color:var(--muted);font-weight:500;font-size:12px}td.num{text-align:right;fon
 #know td:first-child{font-weight:600;white-space:nowrap}#know select,#know input{padding:4px 5px;font-size:12px}#know input{width:3.6em}
 #know td.sub{font-weight:400;white-space:normal;padding-top:0}
 #know .trio{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 6px 14px}#know .trio label{flex:1 1 92px;min-width:0;margin:0;font-size:11.5px;display:flex;flex-direction:column;gap:2px}
-#know td.num{color:var(--ink2);font-size:12px;text-align:left}
+#know td.num{color:var(--ink2);font-size:12px;text-align:left;white-space:nowrap}
+#know label.why{display:inline-flex;align-items:center;gap:3px;margin:0 0 0 6px;font-size:12px}#know label.why input{width:auto;padding:0}
 #llmsec{display:none}#llmnote{margin-top:6px}
 #chat{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:5px}
 .msg{padding:6px 9px;border-radius:9px;max-width:94%;font-size:12.5px;overflow-wrap:anywhere}
@@ -124,7 +125,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
   <div class="note" style="margin-top:6px">Every kind of agent is decided by one model: a built-in one, or a language model (LLM). Agency sets what it is allowed to decide.</div>
   <div class="note muted" id="levelnote" style="margin-top:4px"></div>
   <h2>What they know <span class="plain">memory, observation, interaction</span></h2>
-  <table id="know"><thead><tr><th>Kind</th><th title="How many of its own latest decisions and outcomes it is shown when it decides">Recalls its last</th></tr></thead><tbody></tbody></table>
+  <table id="know"><thead><tr><th>Kind</th><th title="How many of its own latest decisions and outcomes it is shown when it decides, and whether each comes with the reason given for it">Recalls its last</th></tr></thead><tbody></tbody></table>
   <div class="note" style="margin-top:6px">Agency says what a kind may decide; this says what it has to go on. Every decision model of a kind is handed the same. Kinds that find their own way through traffic also have a sight, a memory for slow roads, and other cars to hear from.</div>
   <div id="extras"></div>
   <div id="llmsec">
@@ -235,7 +236,8 @@ function agentRows(){
   const kb=$('know').tBodies[0]; kb.textContent='';                 // what each kind has to go on
   for(const k of sc.kinds){const m=sc.agents[k].knows, tr=kb.insertRow(), opt=(v,t,cur)=>`<option value="${v}" ${String(v)===String(cur)?'selected':''}>${t}</option>`;
     tr.innerHTML=`<td><span class="dot" style="background:${kindColor(k)}"></span>${label(k)}</td>
-    <td class="num"><input type="number" min="0" max="20" value="${m.decisions}" data-k="${k}" data-f="decisions" aria-label="${k}: own decisions recalled"> decisions</td>`;
+    <td class="num"><input type="number" min="0" max="20" value="${m.decisions}" data-k="${k}" data-f="decisions" aria-label="${k}: own decisions recalled"> decisions
+      <label class="why" title="Each remembered decision comes with the reason given for it at the time"><input type="checkbox" data-k="${k}" data-f="reasons" ${m.reasons?'checked':''}> and why</label></td>`;
     if(!m.drives)continue;
     const keep=[...new Set([0,120,600,1800,m.traffic_seconds||0])].sort((a,b)=>a-b), sub=kb.insertRow();
     sub.innerHTML=`<td colspan="2" class="sub"><div class="trio">
@@ -263,14 +265,14 @@ function backendFields(){
     :`The key stays in this browser tab and is sent only to ${preset?preset.base_url:'the address above'}. It is not saved anywhere. Calls are made one at a time, so a run takes minutes, and they are billed to your key.`;
 }
 const control=(k,f)=>document.querySelector(`#agents select[data-f=${f}][data-k="${k}"]`);
-const KNOW_KEY={decisions:'memory.decisions',traffic:'observation.traffic',keep:'memory.traffic_seconds',share:'interaction.share_traffic'};
+const KNOW_KEY={decisions:'memory.decisions',reasons:'memory.reasons',traffic:'observation.traffic',keep:'memory.traffic_seconds',share:'interaction.share_traffic'};
 const knowControl=(k,f)=>document.querySelector(`#know [data-f=${f}][data-k="${k}"]`);
 function formSettings(){                    // everything the form sets now, as {key: value}; what the assistant added on top wins
   const out={'simulation.seed':+$('seed').value,'agents.traveler.count':+$('count').value};
   document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const k=e.dataset.k, on=e.value==='llm';
     out[`agents.${k}.use_llm`]=on; out[`agents.${k}.non_llm_policy`]=on?control(k,'fallback').value:e.value; out[`agents.${k}.agency`]=control(k,'agency').value});
   document.querySelectorAll('#know [data-f]').forEach(e=>{const f=e.dataset.f;
-    out[`agents.${e.dataset.k}.${KNOW_KEY[f]}`]=f==='traffic'?e.value:f==='share'?e.value==='true':Math.max(0,+e.value||0)});
+    out[`agents.${e.dataset.k}.${KNOW_KEY[f]}`]=f==='traffic'?e.value:f==='share'?e.value==='true':f==='reasons'?e.checked:Math.max(0,+e.value||0)});
   return {...out,...extra};
 }
 async function llmSpec(){                   // the chosen language model; in the online demo the visitor's key is handed over first (see agmsim/browser.py)
@@ -326,9 +328,10 @@ function applySettings(scenario,set){        // a proposal goes into the form wh
       if(m[2]==='agency'){if(typeof v==='string'&&[...ag.options].some(o=>o.value===v)){ag.value=v; delete extra[k]} else extra[k]=v}
       else if(m[2]==='non_llm_policy'){fb.value=v; if(md.value!=='llm')md.value=v}
       else md.value=v?'llm':fb.value}
-    else if(km=k.match(/^agents\.(\w+)\.(memory\.decisions|observation\.traffic|memory\.traffic_seconds|interaction\.share_traffic)$/)){
+    else if(km=k.match(/^agents\.(\w+)\.(memory\.decisions|memory\.reasons|observation\.traffic|memory\.traffic_seconds|interaction\.share_traffic)$/)){
       const f=Object.keys(KNOW_KEY).find(x=>KNOW_KEY[x]===km[2]), c=knowControl(km[1],f);
       if(!c){extra[k]=v; continue}
+      if(f==='reasons'){c.checked=!!v; delete extra[k]; continue}
       if(f==='keep'&&![...c.options].some(o=>+o.value===+v))c.add(new Option(v%60?v+' s':v/60+' min',v));
       c.value=String(v); delete extra[k]}
     else extra[k]=v}
@@ -509,7 +512,7 @@ function renderMetrics(m){
   if(P){tiles.push(['Mean day-plan score','$'+P.score_usd_mean.toFixed(2),'what the day was worth to the person']);
     tiles.push(['People late',String(P.people_late),`of ${P.people} · ${P.late_min_mean.toFixed(2)} min each on average`]);
     tiles.push(['Plans changed',String(P.edits),`in ${P.reviews} reviews of the day`])}
-  if(V&&V.trips)tiles.push(['Car time ÷ free-flow time','×'+V.travel_time_ratio.toFixed(2),`${V.reroutes} re-routes`]);
+  if(V&&V.trips)tiles.push(['Car time ÷ free-flow time','×'+V.travel_time_ratio.toFixed(2),`${V.reroutes} re-routes`+(V.vehicles_with_3plus_reroutes?` · ${V.vehicles_with_3plus_reroutes} cars changed route 3 times or more`:'')]);
   if(m.knowledge)tiles.push(['Road reports passed on',m.knowledge.reports_heard.toLocaleString(),`${Math.round(m.knowledge.share_of_agents_that_heard*100)}% of the cars heard of a slow road from another car`]);
   const asked=Object.values(m.decisions).reduce((a,d)=>a+d.decided,0), usedAll=Object.values(m.decisions).reduce((a,d)=>a+d.exercised,0);
   if(L.calls||L.replayed)tiles.push(['Model calls',String(L.calls),`${L.fallbacks} fell back to a built-in model`]);

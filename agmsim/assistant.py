@@ -38,6 +38,7 @@ agents.<kind>.mix (a list such as [{"share": 0.3, "agency": "L1"}]): that share 
 network.capacity_scale (number): road capacity; smaller means more congestion
 network.congestion (true | false): whether traffic slows roads down at all
 agents.<kind>.memory.decisions (integer, 0 for none): how many of its own latest decisions and outcomes an agent of that kind is shown when it decides
+agents.<kind>.memory.reasons (true | false): whether each remembered decision comes with the reason given for it at the time
 agents.<vehicle or ondemand>.observation.traffic (none | local | global): how much of current traffic a car of that kind sees for itself; local means the roads within observation.radius_m
 agents.<vehicle or ondemand>.observation.radius_m (metres): how far a car with local observation sees
 agents.<vehicle or ondemand>.memory.traffic_seconds (seconds, 0 for none): how long a car remembers a slow road it saw or was told about

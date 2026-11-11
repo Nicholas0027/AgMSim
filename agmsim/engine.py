@@ -328,6 +328,8 @@ class Simulation:
         """The kind's observation, memory and interaction settings, as far as they apply to it."""
         kcfg = getattr(self.cfg.agents, name)
         out = {"memory": {"decisions": int(kcfg.memory.decisions)}}
+        if kcfg.memory.reasons:
+            out["memory"]["reasons"] = True
         if self.kinds[name].drives:
             out["observation"] = {"traffic": kcfg.observation.traffic}
             if kcfg.observation.traffic == "local":

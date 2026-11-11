@@ -49,6 +49,9 @@ EVENTS = {
     "block": {"type": "link_condition", "at_seconds": 2100, "until_seconds": 3900, "factor": 0.1, "links": [[14, 15], [15, 21]]},
 }
 
+# the vehicle algorithm's use of its memory: for 10 minutes after a change of route, change again only to save 5 minutes
+SETTLE = {"settle_min": 10, "resettle_saving_min": 5}
+
 EXPERIMENTS = {
     "incident": {
         "question": "事故发生时，是车有 agency 管用，还是运营方有 agency 管用？",
@@ -196,6 +199,19 @@ EXPERIMENTS = {
                     "vehicles.reroutes": "改道次数", "outcomes.vmt_miles": "VMT(英里)",
                     "knowledge.reports_heard": "听到的路况条数", "knowledge.share_of_agents_that_heard": "听到过的车占比"},
     },
+    "decision_memory": {
+        "question": "车不记得路况时，只记得自己最近做过的决策，能不能少走冤枉路？记几条才够？",
+        "scenario": "crossing.yaml",
+        "arms": {
+            "算法 · 不用记忆": {},
+            **{f"会用记忆的算法 · 记得最近 {n} 条": {"agents.vehicle.policy_params": SETTLE, "agents.vehicle.memory.decisions": n}
+               for n in (0, 1, 2, 4, 8)},
+            "参照：算法 · 记路况 10 分钟": {"agents.vehicle.memory.traffic_seconds": 600},
+        },
+        "metrics": {"travelers.trip_time_s_mean": "平均出行时间(秒)", "travelers.trip_time_s_p90": "90 分位(秒)",
+                    "vehicles.reroutes": "改道次数", "vehicles.vehicles_with_3plus_reroutes": "改道 3 次以上的车",
+                    "outcomes.vmt_miles": "VMT(英里)"},
+    },
     "day_plan": {
         "question": "一天的计划被突发事故打乱时，当天就改计划（而不是像 MATSim 那样靠反复重演来学）能挽回多少？",
         "scenario": "evening.yaml",
@@ -232,6 +248,25 @@ EXPERIMENTS = {
         "metrics": {"vehicles.owner_choices": "选择次数", "vehicles.owner_alignment_rate": "与车主利益一致率",
                     "vehicles.owner_sensitivity": "灵敏度", "vehicles.owner_regret_usd_mean": "平均多花(美元)",
                     "vehicles.tolls_usd": "收费总额(美元)", "llm.calls": "LLM 调用", "llm.fallbacks": "回退"},
+    },
+    "llm_decision_memory": {
+        "question": "LLM 开的车不记得路况时，让它看到自己最近的决策和结果（以及当时的理由），它会不会不再来回折返？",
+        "scenario": "crossing.yaml",
+        "llm": True,
+        "arms": {
+            "算法 · 不用记忆": {},
+            "会用记忆的算法 · 记得最近 4 条": {"agents.vehicle.policy_params": SETTLE},
+            "{llm} · 不记得": {"agents.vehicle.use_llm": True, "agents.vehicle.memory.decisions": 0},
+            "{llm} · 记得做过什么和结果": {"agents.vehicle.use_llm": True},
+            "{llm} · 同上，并被要求先回看记忆": {"agents.vehicle.use_llm": True,
+                                      "agents.vehicle.llm_policy_params": {"reflect": True}},
+            "{llm} · 还记得当时的理由，并被要求先回看记忆": {"agents.vehicle.use_llm": True, "agents.vehicle.memory.reasons": True,
+                                            "agents.vehicle.llm_policy_params": {"reflect": True}},
+        },
+        "metrics": {"travelers.trip_time_s_mean": "平均出行时间(秒)", "travelers.trip_time_s_p90": "90 分位(秒)",
+                    "vehicles.reroutes": "改道次数", "vehicles.vehicles_with_3plus_reroutes": "改道 3 次以上的车",
+                    "decisions.vehicle.decided": "被问到的决策", "llm.calls": "LLM 调用", "llm.fallbacks": "回退",
+                    "llm.cost_usd": "花费(美元)"},
     },
     "llm_persuasion": {
         "question": "车提议换乘时附不附一句解释，会不会改变 LLM 扮演的车主的接受率？",
@@ -271,8 +306,9 @@ def run_experiment(name: str, seeds: int, workers: int, llms=("qwen-local",), ll
                 model = LLM_NAMES.get(preset, preset) + (f"（{ANSWERS[answer][0]}）" if tuple(answers) != ("explain",) else "")
                 full = label.format(llm=model)
                 extra = {"llm.preset": preset}
-                if answer != "explain":
-                    extra.update({f"agents.{k}.llm_policy_params": {"rationale": ANSWERS[answer][1]} for k in LLM_KINDS})
+                if answer != "explain":            # on top of what the arm itself passes to the LLM decision model
+                    extra.update({f"agents.{k}.llm_policy_params": {**{**base, **ov}.get(f"agents.{k}.llm_policy_params", {}),
+                                                                    "rationale": ANSWERS[answer][1]} for k in LLM_KINDS})
                 groups.setdefault(local_workers if is_local(preset) else llm_workers, {})[full] = {**base, **ov, **extra}
                 order.append(full)
     total = len(order) * seeds

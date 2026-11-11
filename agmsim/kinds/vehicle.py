@@ -22,10 +22,11 @@ import math
 from ..actions import Decision, Param
 from ..agency import AgencySpec
 from ..entities import TState, Vehicle, VState
-from ..observation import km, minutes
-from .base import Kind, advance, known_eta, known_path, path_to, register_kind, update_flows
+from ..observation import clock, km, minutes
+from .base import Kind, advance, known_eta, known_path, path_to, register_kind, route_memory, update_flows
 
 OBJECTIVE_FAST = "Bring your owner to the destination as quickly as possible."
+SURPRISE_SECONDS = 300.0     # a route found to take this much longer than reckoned when it was chosen is an outcome
 OBJECTIVE_OWNER = ("Act in your owner's interest: weigh travel time against money (tolls, fares, energy) "
                    "the way your owner would, given the preferences in state.owner.")
 
@@ -141,7 +142,7 @@ class VehicleKind(Kind):
         v.state, v.passenger = VState.DRIVING, tr.id
         v.destination = v.target = tr.destination
         v.path = path_to(w, v, tr.destination, w.advisory)
-        v.trip_m, v.trip_start, v.toll_paid, v.suggested, v.transfer = 0.0, w.tick, False, False, None
+        v.trip_m, v.trip_start, v.toll_paid, v.suggested, v.transfer, v.reckoned = 0.0, w.tick, False, False, None, None
         v.next_route_check, v.route_pending, v.park_pending = w.tick, False, False
         # A vehicle with a say over its route decides before it sets off (at the next tick).
         v.hold_until = w.tick + 1 if (self.allows(v.id, "reroute") or self.allows(v.id, "negotiate")) else 0
@@ -252,8 +253,17 @@ class VehicleKind(Kind):
 
         anchor, _, lead_cur, _ = w.anchor(v)
         remaining = self._remaining(v)
-        weight, _, reports = self.sim.traffic.knowledge(self.name, v)
+        weight, seen, reports = self.sim.traffic.knowledge(self.name, v)
         current_s = w.net.route_time(remaining, weight)
+        if v.reckoned is not None:           # what came of its last choice of route, once that shows
+            chosen_at, to_go = v.reckoned
+            expected = max(0.0, to_go - (w.tick - chosen_at) * w.dt)
+            if lead_cur + current_s - expected >= SURPRISE_SECONDS:
+                v.reckoned = None
+                self.sim.feedback(v.id, {"event": "route_slower_than_reckoned",
+                                         "route_chosen_at": clock(chosen_at * w.dt + w.clock0),
+                                         "reckoned_min_to_go": minutes(expected),
+                                         "now_min_to_go": minutes(lead_cur + current_s)})
         drive_s = current_s                  # the quickest the car can get there, as far as it knows
         routes = None
         if self.allows(v.id, "reroute") and anchor != v.target:
@@ -278,7 +288,7 @@ class VehicleKind(Kind):
                  "toll_usd": 0.0 if v.toll_paid else w.route_toll(r.links), "is_current_route": i == 0}
                 for i, r in enumerate(routes)]
         context = {"routes": rows}
-        basis = self.sim.traffic.explain(self.name, v, routes, reports)
+        basis = self.sim.traffic.explain(self.name, v, routes, seen, reports)
         if basis:                                # what the estimates rest on, where the vehicle does not see for itself
             context["traffic_knowledge"] = basis
         actions = [self.spec("choose_route", Param("route", "integer", tuple(range(len(routes)))))]
@@ -296,6 +306,9 @@ class VehicleKind(Kind):
                                            description="short explanation shown to your owner")))
         return self.obs(v.id, trigger, state, context, actions, Decision("choose_route", {"route": 0}), aux)
 
+    def remember(self, rec):
+        return route_memory(rec) if rec.decision.action == "choose_route" else super().remember(rec)
+
     def nothing_to_decide(self, agent_id, trigger):
         v = self.world.vehicles[agent_id]
         v.route_pending = False
@@ -311,6 +324,7 @@ class VehicleKind(Kind):
             v.route_pending = False
             v.next_route_check = w.tick + w.ticks(self.cfg.reroute_check_seconds)
         if action == "choose_route":
+            v.reckoned = (w.tick, rec.obs.context["routes"][args["route"]]["eta_min"] * 60.0)
             if "owner" in rec.obs.state and len(rec.obs.context["routes"]) > 1:
                 # How well did the vehicle serve its owner? Cost of each route in the owner's own terms.
                 routes = rec.obs.context["routes"]

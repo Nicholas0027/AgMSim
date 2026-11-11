@@ -1135,7 +1135,9 @@ def test_memory_reaches_every_decision_model_with_the_observation():
     lengths = {len(memory) for _, memory in seen}
     assert lengths == {0, 1, 2}                               # never more than the two latest entries
     first = next(memory for _, memory in seen if memory)[0]
-    assert first["did"] == "choose_route" and first["trigger"] == "route" and "at" in first
+    assert first["did"] in ("changed route", "kept route") and first["trigger"] == "route" and "at" in first
+    assert set(first) == {"at", "trigger", "did", "route", "quickest_other_route"}  # the routes by what they were,
+    assert first["did"] == "kept route" and "args" not in first                     # not by their numbers
     seen.clear()
     run(SCENARIOS / "incident.yaml", ["agents.vehicle.agency=L1", "agents.vehicle.memory.decisions=0"],
         policies={"vehicle": watcher})
@@ -1164,7 +1166,7 @@ def test_what_a_car_knows_follows_from_what_it_sees_remembers_and_is_told():
         """What the cars' estimates rested on, wherever they did not see for themselves."""
         found = [r["obs"]["context"]["traffic_knowledge"] for r in res.records
                  if r.get("type") == "decision" and r["kind"] == "vehicle" and "traffic_knowledge" in r["obs"]["context"]]
-        return found, [row for b in found for row in b["reports_about_roads_you_do_not_see"]]
+        return found, [row for b in found for row in b.get("reports_about_roads_you_do_not_see", ())]
 
     runs = {"near": crossing(), "blind": crossing(V + "observation.traffic=none"),
             "everything": crossing(V + "observation.traffic=global"),
@@ -1178,7 +1180,9 @@ def test_what_a_car_knows_follows_from_what_it_sees_remembers_and_is_told():
     assert "knowledge" not in m["near"] and m["told"]["knowledge"]["reports_heard"] > 0
     assert 0 < m["told"]["knowledge"]["share_of_agents_that_heard"] <= 1
     # a report is about a road the car does not see itself, and says how old it is and where it came from
-    assert basis(runs["near"]) == ([], []) and basis(runs["everything"]) == ([], [])
+    assert basis(runs["everything"]) == ([], [])              # a car that knows every road is told nothing more
+    found, rows = basis(runs["near"])                         # one that sees what is near is told how far it sees
+    assert found and not rows and all(b["you_see_roads_within_km"] == 0.9 and "roads_you_do_not_see" in b for b in found)
     found, rows = basis(runs["remembering"])
     assert rows and {row["source"] for row in rows} == {"seen earlier"}
     found, rows = basis(runs["told"])
@@ -1199,3 +1203,66 @@ def test_without_memory_a_report_does_not_outlive_the_exchange_it_came_in():
             assert all(report[1] == newest for v in sim.kinds["vehicle"].on_the_road()
                        for report in sim.traffic.reports.get(v.id, {}).values())
     assert sim.traffic.metrics()["reports_heard"] > 0
+
+
+def test_a_decision_can_be_remembered_with_the_reason_given_for_it():
+    seen = []
+
+    def watcher(obs):
+        seen.append(obs.memory)
+        best = min(obs.context["routes"], key=lambda r: (r["eta_min"], r["route"]))
+        return Decision("choose_route", {"route": best["route"]}, "the quickest as far as I can tell " + "x" * 400)
+
+    run(SCENARIOS / "crossing.yaml", ["agents.vehicle.memory.reasons=true"], policies={"vehicle": watcher})
+    items = [item for memory in seen for item in memory if "did" in item]
+    assert items and all(item["why"].startswith("the quickest") and len(item["why"]) == 280 for item in items)
+    changed = next(item for item in items if item["did"] == "changed route")
+    assert set(changed) == {"at", "trigger", "did", "left_route", "took_route", "why"}
+    assert changed["left_route"]["eta_min"] > changed["took_route"]["eta_min"]
+    seen.clear()
+    run(SCENARIOS / "crossing.yaml", [], policies={"vehicle": watcher})
+    assert seen and not any("why" in item for memory in seen for item in memory)
+
+
+def test_a_car_that_recalls_its_last_change_of_route_stops_going_back_and_forth():
+    """A car that sees only what is near and keeps no road in mind returns to the blocked bridge again and
+    again. The algorithm's use of its memory of decisions stops that -- if the car has such a memory."""
+    V = "agents.vehicle."
+    settle = V + "policy_params={settle_min: 10, resettle_saving_min: 5}"
+    _, plain = run(SCENARIOS / "crossing.yaml")
+    _, blank = run(SCENARIOS / "crossing.yaml", [settle, V + "memory.decisions=0"])
+    _, recalls = run(SCENARIOS / "crossing.yaml", [settle, V + "memory.decisions=4"])
+    assert blank.state_digest == plain.state_digest               # nothing remembered: nothing to go on
+    p, r = plain.metrics, recalls.metrics
+    assert p["vehicles"]["vehicles_with_3plus_reroutes"] > 10 > r["vehicles"]["vehicles_with_3plus_reroutes"]
+    assert r["vehicles"]["reroutes"] < p["vehicles"]["reroutes"]
+    assert r["travelers"]["trip_time_s_mean"] < p["travelers"]["trip_time_s_mean"]
+    held = [x for x in recalls.records if x.get("type") == "decision" and x["kind"] == "vehicle"
+            and "changed route" in x["decision"].get("rationale", "")]
+    assert held and all(x["decision"]["args"] == {"route": 0} and x["obs"]["memory"] for x in held)
+
+
+def test_a_car_is_told_when_the_route_it_chose_turns_out_much_slower_than_it_reckoned():
+    """What came of a decision goes into memory when it shows: here, at the next look at the route."""
+    sim, res = run(SCENARIOS / "crossing.yaml")
+    shown = [r["obs"] for r in res.records if r.get("type") == "decision" and r["kind"] == "vehicle" and "obs" in r]
+    told = [item for o in shown for item in o.get("memory", ()) if item.get("outcome") == "route_slower_than_reckoned"]
+    assert told and all(item["now_min_to_go"] - item["reckoned_min_to_go"] >= 5 and "route_chosen_at" in item for item in told)
+    # it is the choice just before that is meant: the entry names the time of a remembered change of route
+    o = next(o for o in shown if any(item.get("outcome") for item in o.get("memory", ())) and len(o["memory"]) >= 2)
+    k = next(i for i, item in enumerate(o["memory"]) if item.get("outcome"))
+    assert k > 0 and o["memory"][k - 1]["did"] == "changed route" and o["memory"][k - 1]["at"] == o["memory"][k]["route_chosen_at"]
+    # cars that know every road are not caught out that way
+    _, clear = run(SCENARIOS / "crossing.yaml", ["agents.vehicle.observation.traffic=global"])
+    assert not any(item.get("outcome") == "route_slower_than_reckoned" for r in clear.records
+                   if r.get("type") == "decision" and r["kind"] == "vehicle" and "obs" in r for item in r["obs"].get("memory", ()))
+
+
+def test_a_language_model_can_be_told_to_read_its_memory_first():
+    from agmsim.policies.llm_policy import REFLECT
+    ov = ["agents.vehicle.agency=L1", "agents.vehicle.use_llm=true", "llm.backend=mock"]
+    plain = Simulation(SCENARIOS / "incident.yaml", overrides=[*QUIET, *ov])
+    told = Simulation(SCENARIOS / "incident.yaml", overrides=[*QUIET, *ov, "agents.vehicle.llm_policy_params={reflect: true}"])
+    agent = next(iter(plain.world.vehicles))
+    assert REFLECT not in plain.policies[agent].system and told.policies[agent].system.endswith(REFLECT)
+    plain.close(), told.close()

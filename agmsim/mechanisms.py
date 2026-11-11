@@ -9,8 +9,9 @@ kind next to the level, say what it has to go on:
     with ``radius_m`` for ``local``.
 ``memory``
     what it carries from the past: its own latest decisions and what came of
-    them (``decisions``), and for how long a road condition it saw or was told
-    about stays with it (``traffic_seconds``).
+    them (``decisions``; with ``reasons`` also why it took each, in its
+    decision model's own words), and for how long a road condition it saw or
+    was told about stays with it (``traffic_seconds``).
 ``interaction``
     what it exchanges with other agents. Driving agents within ``range_m`` of
     each other pass on what they know about slow roads (``share_traffic``).
@@ -49,14 +50,16 @@ from .observation import clock
 SLOW = 0.8              # a road is worth a report below this share of its normal speed
 PERIOD_SECONDS = 10.0   # how often agents take note of the roads around them and exchange reports
 MAX_REPORTS_SHOWN = 6
+MAX_REASON_CHARS = 280  # of the reason an agent gave for a decision, as kept in its memory
 
 
 class Memories:
     """Each agent's latest decisions and outcomes, oldest first."""
 
     def __init__(self, sim):
-        self.world = sim.world
+        self.world, self._kinds = sim.world, sim.kinds
         self._size = {name: max(0, int(getattr(sim.cfg.agents, name).memory.decisions)) for name in sim.kinds}
+        self._reasons = {name: bool(getattr(sim.cfg.agents, name).memory.reasons) for name in sim.kinds}
         self._kind = {agent_id: spec.kind for agent_id, spec in sim.specs.items()}
         self._items: dict[str, deque] = {}
 
@@ -74,11 +77,11 @@ class Memories:
 
     def decided(self, rec) -> None:
         """The agent took a decision of its own (``rec`` has been applied)."""
-        item = {"trigger": rec.trigger, "did": rec.decision.action}
-        if rec.decision.args:
-            item["args"] = dict(rec.decision.args)
-        if rec.result:
-            item["result"] = rec.result
+        if not self._size.get(rec.kind):
+            return
+        item = self._kinds[rec.kind].remember(rec)
+        if rec.decision.rationale and self._reasons.get(rec.kind):
+            item["why"] = rec.decision.rationale[:MAX_REASON_CHARS]
         self._add(rec.agent, item)
 
     def outcome(self, agent_id: str, event: dict) -> None:
@@ -235,11 +238,15 @@ class TrafficKnowledge:
     def weight(self, name: str, m):
         return self.knowledge(name, m)[0]
 
-    def explain(self, name: str, m, routes, reports: dict) -> dict | None:
-        """What the agent's estimates rest on, for the roads of ``routes`` that it does not see itself."""
-        if not reports:
+    def explain(self, name: str, m, routes, seen, reports: dict) -> dict | None:
+        """What the agent's estimates rest on: how far it sees, and what it holds about the roads of
+        ``routes`` that it does not see. None for an agent that knows every road as it is."""
+        if seen is None:
             return None
         w, net, k = self.world, self.world.net, self.kinds[name]
+        out = ({"you_see_roads_within_km": round(k.radius / 1000.0, 2)} if k.traffic == "local"
+               else {"you_see": "no traffic yourself"})
+        out["roads_you_do_not_see"] = "reckoned as clear, unless you hold a report about them"
         on_routes = {lid for route in routes for lid in route.links}
         rows = []
         for lid in sorted(on_routes & set(reports), key=lambda lid: (-reports[lid][1], lid))[:MAX_REPORTS_SHOWN]:
@@ -248,11 +255,8 @@ class TrafficKnowledge:
             rows.append({"road": [link.u, link.v], "speed_pct_of_normal": round(100 * link.free_time / seconds),
                          "age_min": round((w.tick - tick) * w.dt / 60.0, 1),
                          "source": "told by another vehicle" if heard else "seen earlier"})
-        if not rows:
-            return None
-        out = {"reports_about_roads_you_do_not_see": rows}
-        if k.traffic == "local":
-            out["you_see_roads_within_km"] = round(k.radius / 1000.0, 2)
+        if rows:
+            out["reports_about_roads_you_do_not_see"] = rows
         return out
 
     # ------------------------------------------------------------------ results

@@ -180,6 +180,7 @@ def compute_metrics(sim) -> dict:
             # near 0 for a vehicle that ignores its owner's preferences, 1 for one that follows them
             "owner_sensitivity": (round(pay_paid / pay_n - free_paid / free_n, 4) if pay_n and free_n else None),
             "reroutes": sum(v.reroutes for v in vehicles),
+            "vehicles_with_3plus_reroutes": sum(1 for v in vehicles if v.reroutes >= 3),   # going back and forth
             "suggestions": sum(v.suggestions for v in vehicles),
             "suggestions_accepted": sum(v.suggestions_accepted for v in vehicles),
             "charge_stops": sum(v.charge_stops for v in vehicles),

@@ -24,7 +24,7 @@ from ..agency import AgencySpec
 from ..entities import Cab, CState, RideRequest, TState
 from ..network import current_weight
 from ..observation import OBJECTIVES, km, minutes
-from .base import Kind, advance, known_eta, known_path, path_to, register_kind, update_flows
+from .base import Kind, advance, known_eta, known_path, path_to, register_kind, route_memory, update_flows
 
 FREE = (CState.IDLE, CState.REPOSITIONING)
 
@@ -231,7 +231,7 @@ class OnDemandKind(Kind):
         if trigger == "route":
             anchor, _, lead, _ = w.anchor(cab)
             remaining = self._remaining(cab)
-            weight, _, reports = self.sim.traffic.knowledge(self.name, cab)
+            weight, seen, reports = self.sim.traffic.knowledge(self.name, cab)
             current_s = w.net.route_time(remaining, weight)
             best = w.net._dijkstra(anchor, weight, target=cab.target)[0].get(cab.target, math.inf)
             if anchor == cab.target or best >= current_s - cfg.min_saving_seconds:
@@ -242,7 +242,7 @@ class OnDemandKind(Kind):
             rows = [{"route": i, "eta_min": minutes(lead + r.time), "km": km(r.length), "is_current_route": i == 0}
                     for i, r in enumerate(routes)]
             context = {"routes": rows}
-            basis = self.sim.traffic.explain(self.name, cab, routes, reports)
+            basis = self.sim.traffic.explain(self.name, cab, routes, seen, reports)
             if basis:
                 context["traffic_knowledge"] = basis
             return self.obs(cab.id, trigger, state, context,
@@ -257,6 +257,9 @@ class OnDemandKind(Kind):
         return self.obs(cab.id, trigger, state, context,
                         [self.spec("stay"), self.spec("reposition", Param("node", "integer", tuple(p["node"] for p in places)))],
                         Decision("stay"))
+
+    def remember(self, rec):
+        return route_memory(rec) if rec.decision.action == "choose_route" else super().remember(rec)
 
     def nothing_to_decide(self, agent_id, trigger):
         w, cab = self.world, self.world.cabs[agent_id]

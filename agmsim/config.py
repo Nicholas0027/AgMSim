@@ -87,6 +87,7 @@ class MemoryCfg:
     """What an agent carries from the past."""
 
     decisions: int = 4                  # its own latest decisions and outcomes, shown at every decision (0: none)
+    reasons: bool = False               # ... each decision with the reason its decision model gave at the time
     traffic_seconds: float = 0.0        # how long a road condition it saw or was told about stays with it
 
 

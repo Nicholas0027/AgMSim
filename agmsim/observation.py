@@ -40,6 +40,12 @@ def clock(seconds: float) -> str:
     return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
 
 
+def clock_seconds(text: str) -> int:
+    """The inverse of :func:`clock`."""
+    hours, minutes, seconds = (int(part) for part in text.split(":"))
+    return hours * 3600 + minutes * 60 + seconds
+
+
 @dataclass
 class Observation:
     agent_id: str

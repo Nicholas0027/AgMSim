@@ -88,6 +88,19 @@ class Kind:
         """For kinds that drive: the entities that are out on the network now, in id order."""
         return ()
 
+    def remember(self, rec) -> dict:
+        """How a decision of the agent's own goes into its memory.
+
+        An entry is read later, away from the observation it was taken on, so it has to say what was
+        done in words that still mean something then: an option's number does not, what the option was does.
+        """
+        item = {"trigger": rec.trigger, "did": rec.decision.action}
+        if rec.decision.args:
+            item["args"] = dict(rec.decision.args)
+        if rec.result:
+            item["result"] = rec.result
+        return item
+
     # ------------------------------------------------------------------ helpers
 
     def allows(self, agent_id: str, permission: str) -> bool:
@@ -195,6 +208,23 @@ def path_to(world, m, node: int, dynamic: bool = False, weight=None) -> list[int
     else:
         rest = net.fastest(start, node, weight).links
     return ([m.link] if m.link is not None else []) + list(rest)
+
+
+def route_memory(rec) -> dict:
+    """A choice between routes, for the agent's memory: the routes by what they were, not by their numbers
+    (route 0 is whichever route the vehicle is on at that moment)."""
+    rows = rec.obs.context["routes"]
+    chosen = rows[rec.decision.args["route"]]
+
+    def what(row):
+        return {"eta_min": row["eta_min"], "km": row["km"]}
+
+    if chosen["route"] != 0:
+        return {"trigger": rec.trigger, "did": "changed route", "left_route": what(rows[0]), "took_route": what(chosen)}
+    item = {"trigger": rec.trigger, "did": "kept route", "route": what(rows[0])}
+    if len(rows) > 1:
+        item["quickest_other_route"] = what(min(rows[1:], key=lambda row: (row["eta_min"], row["route"])))
+    return item
 
 
 def known_path(sim, kind, m, node: int) -> list[int]:

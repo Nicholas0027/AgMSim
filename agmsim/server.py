@@ -164,7 +164,7 @@ def agent_story(run: "Run", agent_id: str) -> dict:
 
 def _knows(kcfg, kind: str) -> dict:
     """A kind's observation, memory and interaction settings, for the form."""
-    out = {"decisions": int(kcfg.memory.decisions), "drives": kind in DRIVING_KINDS}
+    out = {"decisions": int(kcfg.memory.decisions), "reasons": bool(kcfg.memory.reasons), "drives": kind in DRIVING_KINDS}
     if out["drives"]:
         out.update(traffic=kcfg.observation.traffic, radius_m=kcfg.observation.radius_m,
                    traffic_seconds=kcfg.memory.traffic_seconds, share_traffic=bool(kcfg.interaction.share_traffic),

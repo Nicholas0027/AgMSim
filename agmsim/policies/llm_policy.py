@@ -29,6 +29,10 @@ PROTOCOL = """How you are asked to decide
 Answer format
 Reply with one JSON object and nothing else:
 """
+#: What ``reflect: true`` adds to the system prompt: the same words for every kind of agent.
+REFLECT = ("Before you choose, read your memory. Ask whether the choice you are about to make undoes or repeats a recent "
+           "decision of yours, and whether the reason you had then still holds. What you are shown now may rest on less "
+           "than what you saw then.")
 ANSWER = '{"action": "<name of a permitted action>", "args": {"<argument>": <value>}, "rationale": "<one short sentence giving the main reason>"}'
 ANSWER_BARE = '{"action": "<name of a permitted action>", "args": {"<argument>": <value>}}'
 # The reasoning comes first, so that a model without a reasoning phase of its own works the options
@@ -141,6 +145,7 @@ class LLMPolicy(Policy):
     ``memory`` entries; default: all of them), ``rationale`` (true, the default: a one-sentence reason after the choice; false: the choice
     only, which roughly halves the output tokens and so the time per decision; "first": the model
     works the options out *before* it names its choice, which costs more output tokens),
+    ``reflect`` (true: the model is told to read its memory before it chooses, see ``REFLECT``),
     ``system_prompt`` (replace the generated system prompt), ``extra_instructions`` (appended to
     it -- useful for prompt-sensitivity studies).
     """
@@ -149,12 +154,12 @@ class LLMPolicy(Policy):
     uses_llm = True
 
     def __init__(self, memory: int | None = None, rationale=True, system_prompt: str | None = None,
-                 extra_instructions: str = "", **params):
+                 extra_instructions: str = "", reflect: bool = False, **params):
         super().__init__(**params)
         self.rationale = rationale_mode(rationale)
         self.memory = None if memory is None else max(0, int(memory))
         self._system_override = system_prompt
-        self._extra = extra_instructions
+        self._extra = "\n\n".join(text for text in (REFLECT if reflect else "", extra_instructions) if text)
 
     def bind(self, ctx):
         super().bind(ctx)
