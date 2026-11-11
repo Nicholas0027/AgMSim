@@ -26,6 +26,8 @@ ARG_TYPES: dict[str, str] = {
     "stop": "integer",
     "usd": "number",
     "time": "string",
+    "phase": "string",
+    "direction": "string",
     "activity": "integer",
 }
 

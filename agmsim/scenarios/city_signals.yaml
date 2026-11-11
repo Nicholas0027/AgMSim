@@ -1,0 +1,27 @@
+# Traffic lights and the orchestrator. A 6x6 grid in which every junction has traffic lights. Three trips in
+# four cross the town along a row, east to west or west to east, so the east-west approaches carry far more
+# traffic than the north-south ones; fixed-time lights nevertheless give both the same green. Try:
+#   agmsim run city_signals                                             # lights decide by their own queues (L1)
+#   agmsim run city_signals --set agents.signal.agency=L0               # fixed-time
+#   agmsim run city_signals --set agents.signal.agency=L2 --set agents.signal.non_llm_policy=rule \
+#       --set agents.operator.agency=L2                                 # fixed-time lights that listen to the orchestrator
+name: city_signals
+description: 6x6 grid with traffic lights at every junction, 600 drivers mostly crossing east-west, an orchestrator.
+simulation: {time_step_seconds: 1, duration_seconds: 3600, seed: 3}
+network:
+  type: grid
+  rows: 6
+  cols: 6
+  block_m: 300
+  speed_mps: 12
+  capacity_scale: 0.5
+demand:
+  pattern: corridor
+  end_seconds: 2100
+  min_trip_m: 900
+  params: {axis: east_west, through_share: 0.75}
+agents:
+  traveler: {count: 600, car_ownership: 1.0, non_llm_policy: rule, agency: L0, walk: false}
+  vehicle: {non_llm_policy: algorithm, agency: L1}
+  signal: {junctions: all, non_llm_policy: algorithm, agency: L1, green_seconds: 30}
+  operator: {enabled: true, non_llm_policy: algorithm, agency: L0, review_seconds: 60}

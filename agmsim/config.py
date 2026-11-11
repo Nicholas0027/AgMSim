@@ -22,8 +22,8 @@ from typing import Any, Optional, get_type_hints
 
 import yaml
 
-MACHINE_KINDS = ("vehicle", "bus", "evcs", "operator")
-KIND_ORDER = ("operator", "evcs", "traveler", "bus", "vehicle")   # order in which actions are applied
+MACHINE_KINDS = ("vehicle", "bus", "evcs", "operator", "signal")
+KIND_ORDER = ("operator", "signal", "evcs", "traveler", "bus", "vehicle")   # order in which actions are applied
 
 
 class ConfigError(ValueError):
@@ -166,12 +166,28 @@ class OperatorCfg(AgentCfg):
 
 
 @dataclass
+class SignalCfg(AgentCfg):
+    """Traffic lights. A junction listed here holds vehicles at its stop lines unless their approach has green."""
+
+    junctions: Any = field(default_factory=list)   # nodes with traffic lights: a list, or "all" for every junction with crossing roads
+    green_seconds: float = 30.0         # green per phase of the fixed-time plan (what a signal without authority follows)
+    min_green_seconds: float = 8.0
+    max_green_seconds: float = 90.0
+    lost_seconds: float = 4.0           # after a switch nobody moves for this long
+    decision_seconds: float = 10.0      # how often a signal with authority may reconsider after the minimum green
+    saturation_flow: float = 0.5        # vehicles per second and lane that a green lets through (scaled by network.capacity_scale)
+    request_seconds: float = 60.0       # how long a request of the orchestrator stays in force
+    favour_factor: float = 1.5          # green of the favoured direction in the fixed-time plan (the other gets 1/factor)
+
+
+@dataclass
 class AgentsCfg:
     traveler: TravelerCfg = field(default_factory=TravelerCfg)
     vehicle: VehicleCfg = field(default_factory=VehicleCfg)
     bus: BusCfg = field(default_factory=BusCfg)
     evcs: EvcsCfg = field(default_factory=EvcsCfg)
     operator: OperatorCfg = field(default_factory=OperatorCfg)
+    signal: SignalCfg = field(default_factory=SignalCfg)
 
 
 # --------------------------------------------------------------------------- LLM, recording, metrics
@@ -338,6 +354,7 @@ class Config:
         a = self.agents
         present = {
             "operator": a.operator.enabled,
+            "signal": bool(a.signal.junctions),
             "evcs": bool(a.evcs.stations),
             "traveler": a.traveler.count > 0,
             "bus": bool(a.bus.lines),

@@ -112,6 +112,22 @@ EXPERIMENTS = {
         "metrics": {"vehicles.vkt_km": "车公里", "vehicles.empty_km_share": "空驶占比",
                     "travelers.trip_time_s_mean": "平均出行时间(秒)", "vehicles.charge_stops": "充电出行次数"},
     },
+    "signals": {
+        "question": "信号灯自己有 agency 管用，还是协调者指挥管用？两者需要同时有吗？",
+        "scenario": "signals.yaml",
+        "arms": {
+            "灯 L0（固定配时）": {"agents.signal.agency": "L0"},
+            "灯 L1（按本路口排队）": {},
+            "灯 L2（固定配时，听协调者）· 协调者 L2": {"agents.signal.agency": "L2", "agents.signal.non_llm_policy": "rule",
+                                         "agents.operator.agency": "L2"},
+            "灯 L0 · 协调者 L2": {"agents.signal.agency": "L0", "agents.operator.agency": "L2"},
+            "灯 L2（按排队，听协调者）· 协调者 L2": {"agents.signal.agency": "L2", "agents.operator.agency": "L2"},
+        },
+        "metrics": {"travelers.trip_time_s_mean": "平均出行时间(秒)", "outcomes.traffic_speed_mph": "平均车速(英里/时)",
+                    "outcomes.vht_hours": "VHT(小时)", "signals.wait_s_mean": "每次过灯等待(秒)",
+                    "signals.stopped_share": "被红灯拦下的比例", "signals.switches": "切换次数",
+                    "operator.signal_requests": "协调者指令数"},
+    },
     "day_plan": {
         "question": "一天的计划被突发事故打乱时，当天就改计划（而不是像 MATSim 那样靠反复重演来学）能挽回多少？",
         "scenario": "evening.yaml",

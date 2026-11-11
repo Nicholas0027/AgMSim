@@ -166,6 +166,35 @@ def demand_event(cfg, net, rng, n):
     return trips
 
 
+@register_demand("corridor")
+def demand_corridor(cfg, net, rng, n):
+    """Through traffic: most trips cross the network along one axis, from one side to the other.
+
+    ``params``: ``axis`` (``east_west``, the default, or ``north_south``), ``through_share`` (default
+    0.75; the rest are uniform trips), ``one_way`` (default false: both directions).
+    """
+    params = cfg.demand.params
+    start, end = cfg.demand_window()
+    nodes = sorted(net.nodes)
+    along, across = (0, 1) if params.get("axis", "east_west") == "east_west" else (1, 0)
+    lines: dict = {}
+    for node in nodes:
+        lines.setdefault(round(net.nodes[node][across], 1), []).append(node)
+    lines = [sorted(members, key=lambda m: (net.nodes[m][along], m)) for _, members in sorted(lines.items()) if len(members) > 1]
+    share, one_way = float(params.get("through_share", 0.75)), bool(params.get("one_way", False))
+    trips = []
+    for _ in range(n):
+        t = _sample_time(rng, start, end, params)
+        if lines and rng.random() < share:
+            line = lines[rng.randrange(len(lines))]
+            origin, destination = (line[0], line[-1]) if one_way or rng.random() < 0.5 else (line[-1], line[0])
+        else:
+            origin = nodes[rng.randrange(len(nodes))]
+            destination = _other_node(rng, net, nodes, origin, cfg.demand.min_trip_m)
+        trips.append((t, origin, destination))
+    return trips
+
+
 # --------------------------------------------------------------------------- population & fleet
 
 

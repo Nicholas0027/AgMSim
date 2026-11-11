@@ -291,6 +291,9 @@ class Simulation:
             "network": self.world.net.to_dict(),
             "lines": {k: v["stops"] for k, v in self.world.lines.items()},
             "stations": {s.id: s.node for s in self.world.stations.values()},
+            "signals": {s.id: {"node": s.node, "names": s.names,
+                               "from": [[self.world.net.links[lid].u for lid in ids] for ids in s.phases]}
+                        for s in self.world.signals.values()},
             "kinds": {name: {"side": k.side, "title": k.title, "count": sum(1 for s in self.specs.values() if s.kind == name),
                              "agency": next((self.agency[a].to_dict() for a, s in self.specs.items() if s.kind == name), None),
                              "policy": next((s.policy for s in self.specs.values() if s.kind == name), None),

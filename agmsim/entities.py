@@ -114,6 +114,8 @@ class Vehicle:
     next_route_check: int = 0
     hold_until: int = 0                       # does not move before this tick (deciding how to set off)
     suggested: bool = False                   # already proposed a plan change on this trip
+    queued: bool = False                      # held at a traffic light, waiting its turn
+    go: bool = False                          # released by the traffic light: may cross now
     toll_paid: bool = False
     trip_m: float = 0.0                       # metres driven on the current trip
     trip_start: Optional[int] = None
@@ -153,6 +155,8 @@ class Bus:
     held_s: float = 0.0                       # holding already applied at the current stop
     asked: bool = False                       # the at-stop decision is due
     skip_next: bool = False
+    queued: bool = False                      # held at a traffic light
+    go: bool = False                          # released by the traffic light
     m_total: float = 0.0
     s_moving: float = 0.0                     # seconds on the road between stops
     boardings: int = 0
@@ -184,6 +188,27 @@ class Station:
 
 
 @dataclass
+class Signal:
+    """The traffic lights of one junction. One phase (a group of approaches) has green at a time."""
+
+    id: str
+    node: int
+    phases: list                              # per phase: ids of the incoming links that have green together
+    names: list                               # per phase: "east-west", "north-south"
+    phase: int = 0                            # the phase that has (or is about to get) green
+    since: int = 0                            # tick at which that phase's green began
+    red_until: int = 0                        # everybody is held until this tick (lost time after a switch)
+    next_decision: int = 0
+    request: Optional[dict] = None            # what the orchestrator asked for: {"phase": index, "until": tick}
+    switches: int = 0
+    held: int = 0                             # vehicles that had to stop here
+    wait_ticks: int = 0                       # ticks vehicles spent held here
+    wait_by_phase: list = field(default_factory=list)   # the same, per phase
+    queue_max: int = 0
+    requests_followed: int = 0
+
+
+@dataclass
 class OperatorState:
     id: str = "OP"
     advisory: bool = False                    # real-time link conditions are published to everyone
@@ -195,3 +220,5 @@ class OperatorState:
     priority_ticks: int = 0
     toll_revenue: float = 0.0
     toll_changes: int = 0
+    favoured: Optional[str] = None            # direction the traffic lights are asked to favour
+    signal_requests: int = 0                  # requests and directions given to traffic lights

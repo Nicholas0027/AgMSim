@@ -214,12 +214,26 @@ def compute_metrics(sim) -> dict:
             "price_usd_per_kwh_mean_paid": round(sum(s.revenue for s in stations) / max(1e-9, sum(s.kwh for s in stations)), 4)
             if any(s.kwh for s in stations) else 0.0,
         }
+    if w.signals:
+        signals = list(w.signals.values())
+        lines = [w.net.stop_lines[lid] for s in signals for ids in s.phases for lid in ids]
+        held, through = sum(s.held for s in signals), sum(line.passed for line in lines)
+        out["signals"] = {
+            "junctions": len(signals),
+            "switches": sum(s.switches for s in signals),
+            "crossings": held + through,                                   # vehicles that passed a traffic light
+            "stopped_share": round(held / (held + through), 4) if held + through else 0.0,
+            "wait_s_mean": round(sum(s.wait_ticks for s in signals) * dt / (held + through), 2) if held + through else 0.0,
+            "queue_max": max(s.queue_max for s in signals),               # most vehicles held at one junction at once
+            "requests_followed": sum(s.requests_followed for s in signals),
+        }
     if w.operator is not None:
         out["operator"] = {
             "advisories_published": w.operator.advisories,
             "bus_priority_time_share": round(w.operator.priority_ticks / max(1, w.tick), 4),
             "toll_usd_final": w.operator.toll,
             "toll_changes": w.operator.toll_changes,
+            "signal_requests": w.operator.signal_requests,
             "toll_revenue_usd": round(w.operator.toll_revenue, 2),
         }
 

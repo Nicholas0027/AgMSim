@@ -15,7 +15,7 @@ from __future__ import annotations
 import heapq
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -57,6 +57,16 @@ class Link:
         return self.length / self.cur_speed
 
 
+@dataclass
+class StopLine:
+    """The end of a link at a signalised junction: whether it has green, and who is waiting."""
+
+    green: bool = True
+    credit: float = 0.0                      # vehicles that may be let through now (builds up at the saturation flow while green)
+    queue: list = field(default_factory=list)   # movers held here, first come first
+    passed: int = 0                          # movers that crossed without having to stop
+
+
 @dataclass(frozen=True)
 class Route:
     time: float                 # seconds, under the weights used to compute it
@@ -74,6 +84,7 @@ def current_weight(link: Link) -> float:
 
 class RoadNetwork:
     def __init__(self) -> None:
+        self.stop_lines: dict[int, StopLine] = {}     # link id -> stop line at its end (signalised junctions only)
         self.nodes: dict[int, tuple[float, float]] = {}
         self.links: list[Link] = []
         self.out: dict[int, list[int]] = {}

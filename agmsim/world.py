@@ -5,7 +5,7 @@ import hashlib
 import math
 from typing import Optional
 
-from .entities import Bus, OperatorState, Station, Traveler, TState, Vehicle, VState
+from .entities import Bus, OperatorState, Signal, Station, Traveler, TState, Vehicle, VState
 from .network import RoadNetwork
 
 _IDLE = frozenset((TState.PLANNED, TState.ARRIVED, TState.ABANDONED))
@@ -22,6 +22,7 @@ class World:
         self.buses: dict[str, Bus] = {}
         self.lines: dict[str, dict] = {}                 # line id -> {"stops": [...], "legs_s": [...], "headway_s": float}
         self.stations: dict[str, Station] = {}
+        self.signals: dict[str, Signal] = {}
         self.operator: Optional[OperatorState] = None
         self.cordon: frozenset = frozenset()             # link ids inside the operator's charging cordon
         self.stop_departures: dict[tuple[str, int], int] = {}   # (line, stop index) -> tick of the last departure
@@ -135,5 +136,9 @@ class World:
         op = self.operator
         operator = (op.advisory, op.bus_priority, round(op.toll, 4)) if op else None
         links = tuple((round(link.factor, 6), round(link.flow, 6)) for link in self.net.links)
-        blob = repr((self.tick, vehicles, travelers, buses, stations, operator, links))
+        signals = [(s.id, s.phase, s.since, s.red_until, s.request and (s.request["phase"], s.request["until"]),
+                    tuple((lid, round(self.net.stop_lines[lid].credit, 6), tuple(m.id for m in self.net.stop_lines[lid].queue))
+                          for ids in s.phases for lid in ids)) for s in self.signals.values()]
+        parts = (self.tick, vehicles, travelers, buses, stations, operator, links)
+        blob = repr(parts + ((signals, op and op.favoured),) if signals else parts)
         return hashlib.sha256(blob.encode()).hexdigest()[:20]

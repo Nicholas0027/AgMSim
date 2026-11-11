@@ -98,11 +98,34 @@ class Kind:
 # --------------------------------------------------------------------------- movement
 
 
-def advance(net, m, dt: float, factor: float = 1.0, own_lane: bool = False) -> tuple[float, bool]:
+def _may_cross(line, m, gated: bool) -> bool:
+    """May the mover leave this link now? Movers that have to stop wait in arrival order for the light."""
+    if not gated:                       # the trip ends here, or the mover has priority: no green needed
+        if m.queued:
+            line.queue.remove(m)
+        m.queued = m.go = False
+        return True
+    if m.go:                            # released by the traffic light in this tick
+        m.go = False
+        return True
+    if m.queued:
+        return False
+    if line.green and not line.queue and line.credit >= 1.0:
+        line.credit -= 1.0
+        line.passed += 1
+        return True
+    line.queue.append(m)
+    m.queued = True
+    return False
+
+
+def advance(net, m, dt: float, factor: float = 1.0, own_lane: bool = False, preempt: bool = False) -> tuple[float, bool]:
     """Move ``m`` along ``m.path`` for ``dt`` seconds.
 
     ``m`` is any entity with ``node``, ``link``, ``offset`` and ``path``. With
     ``own_lane`` the mover is unaffected by congestion (but still by incidents).
+    At a signalised junction the mover stops at the end of its link until the
+    light lets it through, unless its trip ends there or ``preempt`` is set.
     Returns the metres travelled and whether the end of the path was reached.
     """
     budget = dt
@@ -115,6 +138,11 @@ def advance(net, m, dt: float, factor: float = 1.0, own_lane: bool = False) -> t
         remaining = link.length - m.offset
         need = remaining / speed
         if need <= budget + 1e-9:
+            line = net.stop_lines.get(link.id)
+            if line is not None and not _may_cross(line, m, len(m.path) > 1 and not preempt):
+                moved += remaining
+                m.offset = link.length
+                break
             moved += remaining
             budget -= need
             m.node, m.link, m.offset = link.v, None, 0.0

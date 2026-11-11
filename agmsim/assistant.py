@@ -37,6 +37,8 @@ network.capacity_scale (number): road capacity; smaller means more congestion
 network.congestion (true | false): whether traffic slows roads down at all
 agents.vehicle.link_conditions (none | local | global): how much a vehicle knows about current traffic
 agents.bus.fare (USD), agents.evcs.price_per_kwh (USD)
+agents.signal.junctions ("all", or a list of node numbers; an empty list means no traffic lights), agents.signal.green_seconds (number): green per direction in the fixed-time plan
+agents.operator.review_seconds (number): how often the orchestrator (the kind named operator) reviews the network
 agents.operator.initial_toll (USD), agents.operator.initial_bus_priority (true | false), agents.operator.initial_advisory (true | false)
 demand.start_seconds, demand.end_seconds (seconds from the start of the run): the period in which trips begin
 interventions (a list that replaces the scenario's own): each entry is
@@ -51,7 +53,8 @@ ANSWER = ('{"reply": "<one or two sentences for the researcher: what you set, an
 def system_prompt() -> str:
     """Stable part of the prompt: what the simulator offers and how to answer."""
     lines = ["You help a researcher set up a run of AgMSim, a mobility simulator in which every kind of agent "
-             "(travellers, their private agentic vehicles, buses, charging stations, the network operator) has a "
+             "(travellers, their private agentic vehicles, buses, charging stations, traffic lights, and the "
+             "orchestrator, whose kind is named operator) has a "
              "decision model and an agency level. Turn the researcher's request into settings.", "",
              "Answer with one JSON object and nothing else:", ANSWER, "",
              "Rules",

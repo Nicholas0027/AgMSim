@@ -860,3 +860,84 @@ def test_assistant_turns_a_request_into_checked_settings():
     via = json.loads(browser.request("/api/chat", json.dumps({"messages": [{"role": "user", "text": "seed 5"}],
                                                               "scenario": "demo_3x3", "llm": llm})))
     assert via["set"] == {"simulation.seed": 5} and via["scenario"] == "demo_3x3"
+
+
+# ---------------------------------------------------------------- traffic lights and the orchestrator
+
+
+def test_a_red_light_holds_movers_and_lets_them_through_in_arrival_order():
+    from types import SimpleNamespace
+    from agmsim.kinds.base import advance
+    from agmsim.network import StopLine
+
+    net = build_network(Config.from_dict({"network": {"type": "grid", "rows": 2, "cols": 3, "block_m": 100, "speed_mps": 10}}).network)
+    first, second = net.link_between(0, 1).id, net.link_between(1, 2).id
+    line = net.stop_lines[first] = StopLine(green=False)
+    mover = lambda name, path: SimpleNamespace(id=name, node=0, link=None, offset=0.0, path=list(path), queued=False, go=False)   # noqa: E731
+    cars = [mover(f"c{i}", [first, second]) for i in range(3)]
+    for car in cars:
+        assert advance(net, car, 20.0) == (100.0, False)                # reaches the stop line and stays on its link
+    assert all(c.link == first and c.offset == 100.0 and c.queued for c in cars) and line.queue == cars
+    assert advance(net, mover("home", [first]), 20.0)[1]                # a trip that ends at the junction needs no green
+    line.green, line.credit = True, 1.0
+    late = mover("late", [first, second])
+    advance(net, late, 20.0)
+    assert late.queued and line.queue[-1] is late and line.credit == 1.0   # green, but it queues behind those already waiting
+    cars[0].queued, cars[0].go = False, True                            # what the light does when it lets the first one go
+    line.queue.pop(0)
+    assert advance(net, cars[0], 5.0)[0] == pytest.approx(50.0) and cars[0].link == second and not cars[0].go
+    assert advance(net, cars[1], 5.0)[0] == 0.0 and cars[1].link == first    # the others still wait
+    bus = mover("bus", [first, second])
+    advance(net, bus, 15.0, preempt=True)
+    assert bus.link == second and not bus.queued                        # priority: through on whatever the light shows
+    free = mover("free", [second, net.link_between(2, 5).id])
+    assert advance(net, free, 30.0)[0] == pytest.approx(200.0) and line.passed == 0   # no light at the end of that link
+
+
+LIGHTS = ["agents.traveler.count=300", "simulation.duration_seconds=2400", "demand.end_seconds=1200"]
+
+
+def test_lights_with_agency_cut_delay_and_the_orchestrator_needs_lights_that_listen(tmp_path):
+    fixed_sim, fixed = run("city_signals", [*LIGHTS, "agents.signal.agency=L0"])
+    _, own = run("city_signals", LIGHTS)
+    listen_sim, listen = run("city_signals", [*LIGHTS, "agents.signal.agency=L2", "agents.signal.non_llm_policy=rule",
+                                              "agents.operator.agency=L2"])
+    _, deaf = run("city_signals", [*LIGHTS, "agents.signal.agency=L0", "agents.operator.agency=L2"])
+    trip = lambda r: r.metrics["travelers"]["trip_time_s_mean"]         # noqa: E731
+    lights = lambda r: r.metrics["signals"]                             # noqa: E731
+    assert lights(fixed)["junctions"] == 32 and fixed.metrics["decisions"]["signal"]["decided"] == 0     # the 4 corners have none
+    assert fixed.metrics["decisions"]["signal"]["forced"] == lights(fixed)["switches"] > 0                 # the fixed plan is a default
+    assert own.metrics["decisions"]["signal"]["decided"] > 0 and lights(own)["wait_s_mean"] < 0.6 * lights(fixed)["wait_s_mean"]
+    assert trip(own) < trip(listen) < trip(fixed)
+    assert listen.metrics["operator"]["signal_requests"] > 0 and listen_sim.world.operator.favoured == "east-west"
+    assert deaf.metrics["operator"]["signal_requests"] > 0 and trip(deaf) == trip(fixed)                   # nobody listens
+    for sim, res in ((fixed_sim, fixed), (listen_sim, listen)):
+        assert res.metrics["travelers"]["completion_rate"] == 1.0
+        assert all(not line.queue for line in sim.world.net.stop_lines.values())                           # nobody left at a light
+        assert not any(v.queued or v.go for v in sim.world.vehicles.values())
+    assert lights(fixed)["crossings"] > 0 and 0 < lights(own)["stopped_share"] < lights(fixed)["stopped_share"] < 1
+    # the orchestrator sees where it is slow and what waited at the lights; a light that listens sees what is asked of it
+    seen = {}
+
+    def watch(obs):
+        seen.setdefault(obs.kind, obs)
+        return obs.default
+
+    run("city_signals", [*LIGHTS, "agents.signal.agency=L2", "agents.operator.agency=L2", "simulation.duration_seconds=900"],
+        policies={"operator": watch, "signal": watch})
+    assert "slowest_roads" in seen["operator"].context and seen["operator"].has("favour_direction")
+    assert set(seen["operator"].context["traffic_lights"]["vehicle_seconds_waited_since_last_review"]) == {"east-west", "north-south"}
+    assert {p["phase"] for p in seen["signal"].context["phases"]} == {"east-west", "north-south"}
+    assert "orchestrator" in seen["signal"].context and "next_junctions" in seen["signal"].context
+    # same seed, same run; and the recorded decisions replay to the same state
+    _, again = run("city_signals", LIGHTS)
+    assert again.state_digest == own.state_digest and again.trace_digest == own.trace_digest
+    saved = Simulation("city_signals", overrides=[f"record.dir={tmp_path}", "record.run_name=lights", *LIGHTS,
+                                                  "agents.signal.agency=L2", "agents.operator.agency=L2"]).run()
+    assert replay(saved.run_dir)["identical"]
+    frame = next(r for r in saved.records if r["type"] == "frame" and r["tick"] > 600)
+    header = next(r for r in saved.records if r["type"] == "header")
+    assert len(frame["signal"]) == 32 and all(row[2] in (-1, 0, 1) for row in frame["signal"])
+    assert set(header["signals"][frame["signal"][0][0]]) == {"node", "names", "from"}
+    _, none = run("city_signals", [*LIGHTS, "agents.signal.junctions=[]"])
+    assert "signals" not in none.metrics and trip(none) < trip(own)                                        # no junction delay at all
