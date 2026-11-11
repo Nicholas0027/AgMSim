@@ -433,7 +433,22 @@ class Simulation:
         slow = {l.id: round(l.factor, 3) for l in w.net.links if abs(l.factor - 1.0) > 1e-9}
         if slow:
             frame["slow_links"] = slow
+        busy = {l.id: round(l.flow, 2) for l in w.net.links if l.flow < 0.95}     # congested: share of free-flow speed
+        if busy:
+            frame["busy_links"] = busy
+        frame["stats"] = self._frame_stats()
         self.recorder.write(frame)
+
+    def _frame_stats(self) -> dict:
+        """Aggregates for charts: how many travellers are in which stage, and how fast traffic moves."""
+        w = self.world
+        people = {"waiting": 0, "activity": 0, "moving": 0, "done": 0, "gave_up": 0}
+        stage = {"planned": "waiting", "at_activity": "activity", "arrived": "done", "abandoned": "gave_up"}
+        for t in w.travelers.values():
+            people[stage.get(t.state.value, "moving")] += 1
+        ratios = [w.net.links[v.link].cur_speed / w.net.links[v.link].speed for v in w.vehicles.values() if v.link is not None]
+        return {"people": people, "on_road": len(ratios),
+                "speed": round(sum(ratios) / len(ratios), 3) if ratios else None}    # mean share of free-flow speed
 
     # ------------------------------------------------------------------ running
 

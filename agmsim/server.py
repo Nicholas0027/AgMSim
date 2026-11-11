@@ -102,6 +102,60 @@ class Run:
         return out
 
 
+def agent_story(run: "Run", agent_id: str) -> dict:
+    """One agent's part in a run: every decision it took and, for a traveller, how its day went.
+
+    ``timeline`` lists what the traveller did, in seconds since the start of the run: activities
+    (``kind: activity``), trips (``travel``) and, for a single trip, the time before the need
+    arose (``before``). Activities dropped from a day plan are listed under ``skipped``.
+    """
+    sim = run.sim
+    if sim is None or agent_id not in sim.specs:
+        return {}
+    w, now = sim.world, sim.world.time_s
+    out = {"id": agent_id, "kind": sim.specs[agent_id].kind, "level": sim.agency[agent_id].level,
+           "policy": sim.specs[agent_id].policy, "now_s": now, "horizon_s": sim.n_ticks * sim.dt,
+           "decisions": [{"i": i, "tick": d["tick"], "t": d["tick"] * sim.dt, "trigger": d["trigger"],
+                          "action": d["decision"]["action"], "args": d["decision"].get("args") or {},
+                          "source": d["source"], "exercised": bool(d.get("exercised"))}
+                         for i, d in enumerate(run.recorder.decisions) if d["agent"] == agent_id]}
+    tr = w.travelers.get(agent_id)
+    if tr is None and agent_id in w.vehicles:
+        out["owner"] = w.vehicles[agent_id].owner
+    if tr is None:
+        return out
+    out["car"] = tr.car
+    items, skipped = [], []
+    if tr.plan is not None:
+        p, last = tr.plan, len(tr.plan.activities) - 1
+        for k, a in enumerate(p.activities):
+            if a.skipped:
+                skipped.append(a.type)
+            elif a.arrived_s is not None:
+                end = a.left_s if a.left_s is not None else (out["horizon_s"] if k == last else now)
+                item = {"kind": "activity", "label": a.type, "start": a.arrived_s, "end": end}
+                if a.latest_start_s is not None:
+                    item["must_start_by"] = a.latest_start_s
+                if a.close_s is not None:
+                    item["closes"] = a.close_s
+                items.append(item)
+        for leg in p.legs:
+            items.append({"kind": "travel", "label": leg["mode"] or "travel", "start": leg["depart_s"], "end": leg["arrive_s"]})
+        if p.leg is not None:
+            items.append({"kind": "travel", "label": tr.mode or "travel", "start": p.leg["depart_s"], "end": now})
+    else:
+        need = tr.t_need * sim.dt
+        items.append({"kind": "before", "label": "not travelling yet", "start": 0.0, "end": min(need, now)})
+        if now > need:
+            arrived = tr.t_arrival * sim.dt if tr.t_arrival is not None else None
+            items.append({"kind": "travel", "label": tr.mode or tr.state.value, "start": need, "end": arrived or now})
+            if arrived is not None:
+                items.append({"kind": "activity", "label": "arrived", "start": arrived, "end": out["horizon_s"]})
+    out["timeline"] = sorted(items, key=lambda item: item["start"])
+    out["skipped"] = skipped
+    return out
+
+
 def meta(online: bool = False) -> dict:
     """What the page needs to build its form. ``online``: the browser demo, where a visitor types their own key."""
     kinds = {}
@@ -139,6 +193,9 @@ def route(method: str, path: str, query: Optional[dict] = None, body: Optional[d
         if run is not None and len(parts) == 5 and parts[3] == "decision" and parts[4].isdigit():
             decisions, i = run.recorder.decisions, int(parts[4])
             return (200, decisions[i]) if i < len(decisions) else (404, {})
+        if run is not None and len(parts) == 5 and parts[3] == "agent":
+            story = agent_story(run, parts[4])
+            return (200, story) if story else (404, {})
         if run is not None and len(parts) == 3:
             return 200, run.view(int(query.get("frames", ["0"])[0]), int(query.get("decisions", ["0"])[0]))
     elif parts == ["api", "run"]:

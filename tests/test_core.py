@@ -772,3 +772,31 @@ def test_online_demo_takes_the_visitors_key_and_calls_the_model_through_the_brow
     shown = json.dumps(view) + json.dumps(run.recorder.header, default=str) + json.dumps(run.recorder.decisions, default=str)
     assert "visitor-test-key" not in shown                             # the key is in no config, trace or page data
     assert json.loads(browser.request("/api/key", json.dumps({"env": "path; rm", "key": "x"})))["ok"] is False
+
+
+def test_frames_carry_what_the_charts_need_and_an_agents_day_can_be_asked_for():
+    from agmsim import browser
+    from agmsim.server import RUNS
+
+    body = {"scenario": "evening_plans", "overrides": ["agents.traveler.count=120", "network.capacity_scale=0.1"]}
+    run_id = json.loads(browser.request("/api/run", json.dumps(body)))["id"]
+    while browser.advance(5.0):
+        pass
+    run = RUNS[run_id]
+    frames = run.recorder.frames
+    assert all(sum(f["stats"]["people"].values()) == 120 for f in frames)             # everybody is in exactly one stage
+    assert frames[0]["stats"]["people"]["activity"] == 120 and frames[-1]["stats"]["people"]["done"] == 120
+    busy = [f for f in frames if f.get("busy_links")]
+    assert busy and all(0.15 <= v < 0.95 for f in busy for v in f["busy_links"].values())
+    speeds = [f["stats"]["speed"] for f in frames if f["stats"]["speed"] is not None]
+    assert 0.15 <= min(speeds) < 0.8 and max(speeds) <= 1.0 and frames[-1]["stats"]["on_road"] == 0
+    changed = next(d["agent"] for d in run.recorder.decisions if d["trigger"] == "plan_review" and d["decision"]["action"] != "keep_plan")
+    story = json.loads(browser.request(f"/api/run/{run_id}/agent/{changed}"))
+    assert story["kind"] == "traveler" and any(d["trigger"] == "plan_review" and d["exercised"] for d in story["decisions"])
+    line = story["timeline"]
+    assert line[0]["label"] == "work" and line[-1]["label"] == "home" and line[-1]["end"] == story["horizon_s"]
+    assert all(a["end"] == pytest.approx(b["start"], abs=2.1) for a, b in zip(line, line[1:]))   # no gaps in the day
+    assert {i["kind"] for i in line} == {"activity", "travel"}
+    car = json.loads(browser.request(f"/api/run/{run_id}/agent/{story['car']}"))
+    assert car["kind"] == "vehicle" and car["owner"] == changed and "timeline" not in car
+    assert json.loads(browser.request(f"/api/run/{run_id}/agent/nobody")) == {}

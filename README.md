@@ -49,6 +49,21 @@ interface (http://127.0.0.1:8765) to choose a scenario, pick for each kind of ag
 model or an LLM) and its agency level, watch the run and inspect any decision. Other commands: `agmsim list`, `agmsim matrix`, `agmsim replay`,
 `agmsim explain`.
 
+What the page shows:
+
+- **Map** — agents on the network; roads darken as traffic slows, incidents are marked, and the agent
+  of the selected decision is ringed.
+- **Over the run** — three charts on one time axis: travellers by stage, traffic speed as a share of
+  free-flow speed, and decisions asked per time slice by kind of agent. Hover to read every series at
+  that moment, click to move the map there; a table view is one click away.
+- **Results** — headline figures, how trips were made, and how often each kind of agent used its authority.
+- **Decisions** — every decision, filterable by kind, by agent and by whether authority was used. A
+  selected decision shows why the agent was asked, what it could choose, what it chose and why, and the
+  agent's whole day (activities, trips and its other decisions) on a timeline.
+
+A kind of agent keeps one colour everywhere on the page; the palette was checked for colour-vision
+deficiencies in light and dark mode.
+
 The online demo is that same page as a static site: `.venv/bin/python online/build.py` writes
 `online/site/`, in which Pyodide runs the `agmsim` package in the visitor's browser (see
 `agmsim/browser.py`). Any static host can serve it; nothing is sent to a server. A visitor who chooses an
