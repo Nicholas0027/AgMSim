@@ -1,0 +1,21 @@
+# Uses the agents defined in custom_agents.py (loaded through ``plugins``).
+name: custom_agents_demo
+description: The multimodal city with a toll-averse vehicle policy and a cautious bus policy.
+
+plugins: [custom_agents.py]
+
+simulation: {time_step_seconds: 2, duration_seconds: 2400, seed: 3}
+network: {type: grid, rows: 5, cols: 5, block_m: 400, speed_mps: 10, capacity_scale: 0.1}
+demand: {pattern: cbd, end_seconds: 1500, min_trip_m: 1000}
+
+agents:
+  traveler: {count: 200, car_ownership: 0.7, non_llm_policy: utility, agency: L3}
+  vehicle: {non_llm_policy: toll_averse, agency: L2}
+  bus:
+    non_llm_policy: cautious_bus
+    policy_params: {max_holds: 5}
+    agency: L1
+    lines: [{id: A, stops: [10, 12, 14, 19, 17, 15], buses: 2}]
+  operator: {enabled: true, non_llm_policy: algorithm, agency: L2, cordon_radius_m: 450}
+
+record: {dir: null}

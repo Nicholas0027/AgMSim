@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agmsim"
+version = "0.1.0"
+description = "AgMSim: an agentic mobility simulator and testbed for human-machine co-decision in mobility services"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["pyyaml>=6.0"]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=1.0"]
+dev = ["pytest>=8", "anthropic>=1.0"]
+
+[project.scripts]
+agmsim = "agmsim.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["agmsim*"]
+
+[tool.setuptools.package-data]
+agmsim = ["scenarios/*.yaml", "web/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

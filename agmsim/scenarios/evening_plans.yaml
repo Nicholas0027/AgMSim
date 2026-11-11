@@ -1,0 +1,44 @@
+# Day plans (MATSim's action mechanism) under a disruption. People are at work on the west bank and leave
+# between about 17:00 and 18:00; half collect a child on the way (within five minutes of the planned
+# arrival), half have an errand at a place that closes at 18:20 (optional), and everybody drives home to
+# the east bank. From 17:05 an incident all but closes one of the two bridges for over an hour.
+# Travellers are L4 here, so they may change the rest of their plan; try:
+#   agmsim run evening_plans --set agents.traveler.agency=L0             # follow the plan as written
+#   agmsim run evening_plans --set agents.traveler.non_llm_policy=rule   # may change it, never do
+#   agmsim run evening_plans --set agents.traveler.use_llm=true --set llm.preset=qwen-local \
+#       --set agents.traveler.count=80 --set network.capacity_scale=0.067     # smaller: about 70 model calls
+# With fewer travellers, scale network.capacity_scale down in proportion (240 people : 0.2), or the roads
+# stay clear and nobody has a reason to review their plan.
+name: evening_plans
+description: Day plans under a non-recurrent disruption; who adapts the rest of the day, and how well?
+simulation: {time_step_seconds: 2, duration_seconds: 12600, seed: 1, clock_start: "16:30"}
+network:
+  type: bridge
+  rows: 4
+  cols: 4
+  block_m: 400
+  speed_mps: 10
+  capacity_scale: 0.2
+  params: {gap_m: 1200, bridge_rows: [1, 2]}
+demand:
+  pattern: hotspots
+  start_seconds: 1800          # work ends between 17:00 and 18:00, most often around 17:30
+  end_seconds: 5400
+  min_trip_m: 2000
+  params:
+    peak_seconds: 3600
+    peak_width_seconds: 900
+    background_share: 0.0
+    origins: {0: 1, 1: 1, 2: 1, 4: 1, 5: 1, 6: 1, 8: 1, 9: 1, 10: 1, 12: 1, 13: 1, 14: 1}
+    destinations: {17: 1, 18: 1, 19: 1, 21: 1, 22: 1, 23: 1, 25: 1, 26: 1, 27: 1, 29: 1, 30: 1, 31: 1}
+  plan:
+    - {type: work, typical_min: 480}
+    - {type: collect child, share: 0.5, duration_min: 5, latest_start_slack_min: 5, priority: 6}
+    - {type: errand, share: 0.5, duration_min: 25, closes: "18:20", optional: true, priority: 2}
+    - {type: home, typical_min: 720}
+agents:
+  traveler: {count: 240, car_ownership: 1.0, non_llm_policy: utility, agency: L4, walk: false}
+  vehicle: {non_llm_policy: algorithm, agency: L1}
+interventions:
+  - {type: link_condition, at_seconds: 2100, until_seconds: 6300, factor: 0.05, links: [[7, 20]]}
+record: {frames_every_seconds: 10}

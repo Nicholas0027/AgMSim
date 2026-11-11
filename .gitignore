@@ -1,0 +1,12 @@
+.venv/
+runs/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+.DS_Store
+.claude/
+online/site/
+# internal notes, kept out of the repository
+docs/DESIGN_zh.md

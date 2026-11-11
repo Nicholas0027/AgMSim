@@ -1,0 +1,26 @@
+# E3: through traffic across a tolled centre. The centre is fast (arterials) but costs 0.6 USD;
+# the way around is free but slower. Demand is held fixed (everybody drives).
+name: exp_toll
+description: Fixed cordon charge; does knowing the owner's preferences change who pays?
+simulation: {time_step_seconds: 2, duration_seconds: 3000, seed: 1}
+network:
+  type: grid
+  rows: 7
+  cols: 7
+  block_m: 400
+  speed_mps: 9
+  capacity_scale: 0.4
+  params: {arterial_every: 3, arterial_speed_mps: 15}
+demand:
+  pattern: hotspots
+  end_seconds: 1800
+  min_trip_m: 2000
+  params:
+    background_share: 0.0
+    origins: {14: 1, 21: 1, 28: 1, 7: 1, 35: 1}
+    destinations: {20: 1, 27: 1, 34: 1, 13: 1, 41: 1}
+agents:
+  traveler: {count: 240, car_ownership: 1.0, non_llm_policy: rule, agency: L0, walk: false}
+  vehicle: {non_llm_policy: algorithm, agency: L1}
+  operator: {enabled: true, agency: L0, cordon_radius_m: 450, initial_toll: 0.6}
+record: {dir: null}

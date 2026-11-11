@@ -1,0 +1,23 @@
+# E5: many cars start with too little charge for their trip. One central station is on almost
+# everybody's way; two others are out of the way. Everybody drives.
+name: exp_charging
+description: Scarce charging; do vehicles that manage their own charging relieve the central station?
+simulation: {time_step_seconds: 2, duration_seconds: 5400, seed: 1}
+network: {type: grid, rows: 6, cols: 6, block_m: 400, speed_mps: 10, capacity_scale: 0.3}
+demand: {pattern: uniform, end_seconds: 1800, min_trip_m: 1600}
+agents:
+  traveler: {count: 240, car_ownership: 1.0, non_llm_policy: rule, agency: L0, walk: false}
+  vehicle:
+    non_llm_policy: algorithm
+    policy_params: {top_up_below_pct: 0}     # isolate en-route station choice from idle top-ups
+    agency: L3
+    battery: {capacity_kwh: 5, consumption_kwh_per_km: 0.18, initial_soc_min: 0.08, initial_soc_max: 0.3, target_soc: 0.8}
+  evcs:
+    non_llm_policy: algorithm
+    agency: L0
+    review_seconds: 180
+    stations:
+      - {id: C, node: 14, chargers: 1, power_kw: 30}
+      - {id: N, node: 32, chargers: 2, power_kw: 30}
+      - {id: S, node: 3, chargers: 2, power_kw: 30}
+record: {dir: null}

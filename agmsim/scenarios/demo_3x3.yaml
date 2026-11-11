@@ -1,0 +1,32 @@
+# The smallest complete scenario: a 3x3 grid with travellers and their private agentic vehicles (AgVs).
+# Everything runs without an LLM. Flip the switches to explore:
+#   agmsim run demo_3x3 --set agents.vehicle.agency=L1
+#   agmsim run demo_3x3 --set human_agents.use_llm=true --set llm.backend=mock
+name: demo_3x3
+description: 3x3 grid, 40 travellers (70% own an AgV), 30 minutes, one incident.
+
+simulation:
+  time_step_seconds: 1
+  duration_seconds: 1800
+  seed: 42
+
+network: {type: grid, rows: 3, cols: 3, block_m: 400, speed_mps: 10, capacity_scale: 0.1}
+
+demand: {pattern: uniform, end_seconds: 1200, min_trip_m: 800}
+
+agents:
+  traveler:
+    count: 40
+    car_ownership: 0.7
+    use_llm: false
+    non_llm_policy: utility      # rule | utility
+    agency: L1                   # chooses how to travel
+  vehicle:
+    use_llm: false
+    non_llm_policy: algorithm    # rule | algorithm
+    agency: L1                   # re-routes around congestion and incidents
+
+interventions:
+  - {type: link_condition, at_seconds: 300, until_seconds: 1200, links: [[3, 4], [4, 5]], factor: 0.15}
+
+record: {dir: runs}

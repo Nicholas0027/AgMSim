@@ -1,0 +1,60 @@
+# All five kinds of agent on a 6x6 grid for one hour:
+# travellers, their private agentic vehicles (electric), two bus lines, two charging stations and a
+# network operator with a central charging cordon. An incident slows three links mid-run.
+# Each simulated car stands for about ten real ones (capacity_scale 0.1), so congestion builds up.
+name: city_multimodal
+description: 6x6 grid, 400 travellers, private electric AgVs, 2 bus lines, 2 charging stations, operator, one incident.
+
+simulation:
+  time_step_seconds: 2
+  duration_seconds: 3600
+  seed: 7
+
+network:
+  type: grid
+  rows: 6
+  cols: 6
+  block_m: 400
+  speed_mps: 10
+  capacity_scale: 0.1
+  params: {arterial_every: 3, arterial_speed_mps: 14}
+
+demand:
+  pattern: cbd
+  end_seconds: 2400
+  min_trip_m: 1200
+  params: {inbound_share: 0.7, peak_seconds: 1200, peak_width_seconds: 500}
+
+agents:
+  traveler:
+    count: 400
+    car_ownership: 0.7
+    non_llm_policy: utility
+    agency: L4
+  vehicle:
+    non_llm_policy: algorithm
+    agency: L4
+    # A small battery so that charging matters within a one-hour scenario (not a realistic value).
+    battery: {capacity_kwh: 5, consumption_kwh_per_km: 0.18, initial_soc_min: 0.25, initial_soc_max: 0.9, target_soc: 0.8}
+  bus:
+    non_llm_policy: algorithm
+    agency: L1
+    lines:
+      - {id: A, stops: [12, 14, 16, 22, 20, 18], buses: 3, capacity: 40}
+      - {id: B, stops: [2, 14, 26, 27, 15, 3], buses: 3, capacity: 40}
+  evcs:
+    non_llm_policy: algorithm
+    agency: L2
+    stations:
+      - {id: S1, node: 7, chargers: 3, power_kw: 60}
+      - {id: S2, node: 28, chargers: 3, power_kw: 60}
+  operator:
+    enabled: true
+    non_llm_policy: algorithm
+    agency: L2
+    cordon_radius_m: 450
+
+interventions:
+  - {type: link_condition, at_seconds: 900, until_seconds: 2400, links: [[14, 15], [15, 16], [20, 21]], factor: 0.15}
+
+record: {dir: runs, frames_every_seconds: 4}

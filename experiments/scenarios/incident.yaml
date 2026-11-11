@@ -1,0 +1,21 @@
+# E1/E2: a long incident on the main east-west arterial. Everybody drives (demand is held fixed).
+name: exp_incident
+description: Incident on the central arterial; cars only; who needs to be agentic to avoid it?
+simulation: {time_step_seconds: 2, duration_seconds: 3000, seed: 1}
+network:
+  type: grid
+  rows: 6
+  cols: 6
+  block_m: 400
+  speed_mps: 10
+  capacity_scale: 0.15
+  params: {arterial_every: 3, arterial_speed_mps: 15}
+demand: {pattern: uniform, end_seconds: 1800, min_trip_m: 1600}
+agents:
+  traveler: {count: 300, car_ownership: 1.0, non_llm_policy: rule, agency: L0, walk: false}
+  vehicle: {non_llm_policy: algorithm, agency: L0}
+  operator: {enabled: true, non_llm_policy: algorithm, agency: L0}
+interventions:
+  - {type: link_condition, at_seconds: 300, until_seconds: 2100, factor: 0.1,
+     links: [[19, 20], [20, 21], [21, 22], [14, 20], [20, 26], [15, 21], [21, 27]]}
+record: {dir: null}
