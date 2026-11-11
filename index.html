@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgMSim</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1c2330;--muted:#6b7686;--line:#dfe3ea;--road:#c3cad6;--accent:#2563eb;
+--car:#2f7ed8;--charge:#d99a00;--parked:#9aa3b2;--bus:#7b4fd6;--walk:#1f9d6b;--wait:#d9534f;--slow:#e0523f;--act:#d16ba5}
+@media (prefers-color-scheme:dark){:root{--bg:#12151b;--panel:#1b2029;--ink:#e6e9ef;--muted:#96a0b0;--line:#2c3340;
+--road:#3a4352;--accent:#6ea0ff;--parked:#5d6676}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:baseline}
+header h1{font-size:16px;margin:0}header span{color:var(--muted)}
+main{display:grid;grid-template-columns:310px minmax(360px,1fr) 380px;gap:12px;padding:12px;height:calc(100vh - 44px)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;min-height:0}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:14px 0 6px}h2:first-child{margin-top:0}
+label{display:block;color:var(--muted);margin:6px 0 2px}
+select,input,button{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 7px}
+select,input[type=text],input[type=number]{width:100%}
+button{cursor:pointer}button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+table{width:100%;border-collapse:collapse}td,th{padding:3px 4px;text-align:left;vertical-align:middle}
+th{color:var(--muted);font-weight:500}td.num{text-align:right;font-variant-numeric:tabular-nums}
+.kind td:first-child{font-weight:600}.row{display:flex;gap:8px;align-items:center;margin-top:8px}.row>*{flex:1}
+#map{display:flex;flex-direction:column;padding:8px}canvas{flex:1;width:100%;min-height:0}
+#bar{display:flex;gap:8px;align-items:center;padding-top:6px}#bar input[type=range]{flex:1}#clock{min-width:150px;color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;color:var(--muted);padding:4px 2px}.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+#status{color:var(--muted);margin-top:8px}#status.err{color:var(--wait)}
+#log div{padding:3px 4px;border-bottom:1px solid var(--line);cursor:pointer}#log div:hover{background:var(--bg)}
+#log b{font-weight:600}#log .f{color:var(--muted)}#log .x{color:var(--accent)}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:260px;overflow:auto;font-size:11.5px}
+.note{color:var(--muted);font-size:12px}
+@media (max-width:1100px){main{grid-template-columns:1fr;height:auto}canvas{height:420px;flex:none}}
+</style>
+</head>
+<body>
+<header><h1>AgMSim</h1><span>Agentic Mobility Simulator — decision model and agency are set separately for every kind of agent</span></header>
+<main>
+<section id="controls">
+  <h2>Scenario</h2>
+  <select id="scenario"></select><div class="note" id="desc"></div>
+  <div class="row"><div><label>Seed</label><input id="seed" type="number"></div>
+    <div><label>Travellers</label><input id="count" type="number" min="1"></div></div>
+  <h2>Agents</h2>
+  <table id="agents"><thead><tr><th>Kind</th><th>LLM</th><th>Non-LLM policy</th><th>Agency</th></tr></thead><tbody></tbody></table>
+  <div class="note" id="levelnote"></div>
+  <h2>LLM backend (used where LLM is ticked)</h2>
+  <select id="backend"></select><div class="note" id="llmnote"></div>
+  <div id="remote"><label>Base URL</label><input id="base_url" type="text" value="http://127.0.0.1:8089/v1">
+    <label>Model</label><input id="model" type="text" value="Qwen/Qwen2.5-7B-Instruct"></div>
+  <div class="row"><button class="primary" id="run">Run</button><button id="stop">Stop</button></div>
+  <div id="status">Ready.</div>
+</section>
+<section id="map">
+  <canvas id="cv"></canvas>
+  <div class="legend">
+    <span><i style="background:var(--car)"></i>AgV driving</span><span><i style="background:var(--charge)"></i>AgV charging</span>
+    <span><i style="background:var(--parked)"></i>AgV parked</span><span><i style="background:var(--bus);border-radius:2px"></i>bus</span>
+    <span><i style="background:var(--walk)"></i>walking</span><span><i style="background:var(--wait)"></i>waiting at stop</span><span><i style="background:var(--act)"></i>at an activity</span>
+    <span><i style="background:var(--slow);border-radius:0;height:3px"></i>slow link</span></div>
+  <div id="bar"><button id="play">Pause</button><input id="scrub" type="range" min="0" max="0" value="0">
+    <select id="speed" style="width:70px"><option value="1">1×</option><option value="4" selected>4×</option><option value="16">16×</option></select>
+    <span id="clock">–</span></div>
+</section>
+<section>
+  <h2>Results</h2><div id="metrics" class="note">Run a scenario to see results.</div>
+  <h2>Decisions <select id="filter" style="width:auto;margin-left:6px"><option value="">all kinds</option></select></h2>
+  <div id="log"></div>
+  <h2>Selected decision</h2><pre id="detail">Click a decision to see what the agent saw, what it was permitted to do and what it chose.</pre>
+</section>
+</main>
+<script src="backend.js"></script>
+<script>
+const $=id=>document.getElementById(id), css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+let meta, run=null, header=null, frames=[], decisions=[], head=0, playing=true, timer=null, nodes={}, box=null, clock0=0;
+const dayClock=v=>{if(typeof v!=='string')return +v||0; const p=v.split(':').map(Number); return p[0]*3600+p[1]*60+(p[2]||0)};
+const two=n=>String(Math.floor(n)).padStart(2,'0');
+async function api(path,body){if(window.agmsimBackend)return window.agmsimBackend(path,body);   // online demo: the simulator runs in this page
+  const r=await fetch(path,body?{method:'POST',body:JSON.stringify(body)}:{});return r.json()}
+function agentRows(){
+  const sc=meta.scenarios[$('scenario').value], tb=$('agents').tBodies[0]; tb.innerHTML='';
+  $('desc').textContent=sc.description; $('seed').value=sc.seed; $('count').value=sc.travelers;
+  $('filter').innerHTML='<option value="">all kinds</option>'+sc.kinds.map(k=>`<option>${k}</option>`).join('');
+  for(const k of sc.kinds){const kd=meta.kinds[k], a=sc.agents[k], tr=tb.insertRow(); tr.className='kind';
+    const lvl=typeof a.agency==='string'?a.agency:'L0';
+    tr.innerHTML=`<td title="${kd.title}">${k}</td><td><input type="checkbox" data-k="${k}" data-f="use_llm" ${a.use_llm?'checked':''}></td>
+    <td><select data-k="${k}" data-f="non_llm_policy">${kd.policies.filter(p=>p!=='llm'&&p!=='remote').map(p=>`<option ${p===a.policy?'selected':''}>${p}</option>`).join('')}</select></td>
+    <td><select data-k="${k}" data-f="agency">${Object.keys(kd.levels).map(l=>`<option ${l===lvl?'selected':''} title="${kd.levels[l].join(', ')||'no authority'}">${l}</option>`).join('')}</select></td>`}
+  $('levelnote').textContent=Object.entries(meta.level_names).map(([k,v])=>`${k} ${v}`).join(' · ');
+}
+async function start(){
+  const ov=[`simulation.seed=${$('seed').value}`,`agents.traveler.count=${$('count').value}`]; let llm=false;
+  document.querySelectorAll('#agents [data-k]').forEach(e=>{const v=e.type==='checkbox'?e.checked:e.value; if(e.dataset.f==='use_llm'&&v)llm=true;
+    ov.push(`agents.${e.dataset.k}.${e.dataset.f}=${v}`)});
+  const b=$('backend').value;
+  if(llm){ if(b.startsWith('preset:')) ov.push(`llm.preset=${b.slice(7)}`);
+    else{ov.push(`llm.backend=${b}`); if(b!=='mock') ov.push(`llm.base_url=${$('base_url').value}`,`llm.model=${$('model').value}`)} }
+  const r=await api('/api/run',{scenario:$('scenario').value,overrides:ov});
+  run=r.id; header=null; frames=[]; decisions=[]; head=0; playing=true; $('play').textContent='Pause';
+  $('log').innerHTML=''; $('metrics').textContent='Running…'; $('status').className=''; clearInterval(timer); timer=setInterval(poll,400); poll();
+}
+async function poll(){
+  if(!run)return; const r=await api(`/api/run/${run}?frames=${frames.length}&decisions=${decisions.length}`);
+  if(r.header&&!header){header=r.header; clock0=dayClock(header.config.simulation.clock_start); nodes={}; let xs=[],ys=[]; for(const [n,x,y] of header.network.nodes){nodes[n]=[x,y];xs.push(x);ys.push(y)}
+    box=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]}
+  const follow=head>=frames.length-2; frames.push(...r.frames); decisions.push(...r.decisions); if(follow&&!playing)head=frames.length-1;
+  $('scrub').max=Math.max(0,frames.length-1); renderLog(r.decisions);
+  $('status').textContent=r.status==='error'?r.error:`${r.status}: tick ${r.tick} / ${r.ticks}, ${decisions.length} decisions`;
+  if(r.status==='error')$('status').className='err';
+  if(r.metrics){renderMetrics(r.metrics)} if(['done','stopped','error'].includes(r.status)&&!r.frames.length&&!r.decisions.length){clearInterval(timer)}
+}
+function renderLog(items){
+  const f=$('filter').value, log=$('log');
+  for(const d of items){ if(f&&d.kind!==f)continue; const el=document.createElement('div'); const forced=d.source==='forced';
+    el.innerHTML=`<span class="f">t${d.tick}</span> <b>${d.agent}</b> ${d.trigger} → <span class="${d.exercised?'x':''}">${d.decision.action}</span> ${Object.keys(d.decision.args||{}).length?JSON.stringify(d.decision.args):''} <span class="f">${forced?'(no authority)':d.source}${d.valid===false?' · invalid':''}${d.info&&d.info.fallback?' · fallback':''}</span>`;
+    el.onclick=async()=>{$('detail').textContent=JSON.stringify(await api(`/api/run/${run}/decision/${d.i}`),null,1)}; log.prepend(el) }
+  while(log.children.length>300)log.lastChild.remove();
+}
+function renderMetrics(m){
+  const rows=[]; const add=(g,k,label)=>{if(m[g]&&m[g][k]!==undefined&&m[g][k]!==null)rows.push([label,typeof m[g][k]==='object'?Object.entries(m[g][k]).map(([a,b])=>`${a} ${(b*100).toFixed(0)}%`).join(', '):m[g][k]])};
+  add('travelers','completion_rate','Trips completed (share)'); add('travelers','mode_share','Mode share'); add('travelers','trip_time_s_mean','Mean trip time (s)');
+  add('travelers','generalised_cost_usd_mean','Mean generalised cost (USD)');
+  add('plans','score_usd_mean','Day plans: mean score (USD)'); add('plans','people_late','… people late for an activity'); add('plans','late_min_mean','… mean lateness (min)');
+  add('plans','reviews','… plan reviews'); add('plans','edits','… of which the plan was changed'); add('plans','activities_skipped','… optional activities dropped');
+  add('plans','review_sensitivity','… changed when worth it minus when not'); add('vehicles','travel_time_ratio','Car time / free-flow time'); add('vehicles','reroutes','Re-routes by AgVs');
+  add('vehicles','suggestions','Transfers suggested by AgVs'); add('vehicles','suggestions_accepted','… accepted by owners'); add('vehicles','charge_stops','Charging trips');
+  add('vehicles','tolls_usd','Tolls paid (USD)'); add('bus','boardings','Bus boardings'); add('bus','holds','Bus holds'); add('evcs','revenue_usd','Station revenue (USD)');
+  add('operator','advisories_published','Advisories published'); add('operator','toll_usd_final','Final cordon toll (USD)');
+  let h='<table>'+rows.map(r=>`<tr><td>${r[0]}</td><td class="num">${r[1]}</td></tr>`).join('')+'</table><table><tr><th>Kind</th><th>Level</th><th>Policy</th><th>Asked</th><th>Default by rule</th><th>Used authority</th></tr>';
+  for(const [k,d] of Object.entries(m.decisions))h+=`<tr><td>${k}</td><td>${d.agency_level}</td><td>${d.policy}</td><td class="num">${d.decided}</td><td class="num">${d.forced}</td><td class="num">${d.exercised}</td></tr>`;
+  h+='</table>'; const l=m.llm; if(l.calls||l.replayed){h+=`<div class="note">LLM: ${l.calls} calls, ${l.input_tokens}/${l.output_tokens} tokens, ${l.fallbacks} fallbacks — ${l.backends.map(b=>b.backend+' '+b.model+' ('+b.latency_ms_mean+' ms)').join(', ')}`+(l.backends.some(b=>b.backend==='mock')?'. The mock backend is an offline stand-in, not a language model.':'')+'</div>'}
+  $('metrics').innerHTML=h;
+}
+function draw(){
+  const cv=$('cv'), dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=cv.clientHeight;
+  if(cv.width!==w*dpr||cv.height!==h*dpr){cv.width=w*dpr;cv.height=h*dpr} const g=cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
+  if(!header||!frames.length){requestAnimationFrame(draw);return}
+  const pad=28, sx=(w-2*pad)/Math.max(1,box[2]-box[0]), sy=(h-2*pad)/Math.max(1,box[3]-box[1]), s=Math.min(sx,sy);
+  const ox=(w-s*(box[2]-box[0]))/2, oy=(h-s*(box[3]-box[1]))/2, P=(x,y)=>[ox+(x-box[0])*s, h-oy-(y-box[1])*s];
+  const fr=frames[Math.min(frames.length-1,Math.floor(head))], slow=fr.slow_links||{};
+  g.lineCap='round';
+  for(const [id,u,v] of header.network.links){const a=P(...nodes[u]), b=P(...nodes[v]); g.beginPath(); g.moveTo(...a); g.lineTo(...b);
+    g.strokeStyle=slow[id]!==undefined?css('--slow'):css('--road'); g.lineWidth=slow[id]!==undefined?4:2.5; g.stroke()}
+  g.font='10px system-ui'; g.textAlign='center';
+  for(const [line,stops] of Object.entries(header.lines||{}))for(const n of stops){const p=P(...nodes[n]); g.beginPath(); g.arc(p[0],p[1],6,0,7); g.strokeStyle=css('--bus'); g.lineWidth=1.5; g.stroke()}
+  for(const st of fr.evcs||[]){const p=P(...nodes[st[1]]); g.fillStyle=css('--charge'); g.fillRect(p[0]-7,p[1]-7,14,14); g.fillStyle=css('--ink'); g.fillText(`${st[0]} $${st[2]} ${st[3]}/${st[5]}+${st[4]}`,p[0],p[1]-11)}
+  for(const t of fr.traveler||[]){const p=P(t[1],t[2]);
+    if(t[3]==='at_activity'){let k=7; for(const c of t[0])k=(k*31+c.charCodeAt(0))%997; p[0]+=(k%7-3)*3; p[1]+=(Math.floor(k/7)%7-3)*3}   // spread people who are at the same place
+    g.beginPath(); g.arc(p[0]+3,p[1]-3,2.6,0,7); g.fillStyle=t[3]==='at_stop'?css('--wait'):t[3]==='deciding'?css('--parked'):t[3]==='at_activity'?css('--act'):css('--walk'); g.fill()}
+  for(const v of fr.vehicle||[]){const p=P(v[1],v[2]); g.beginPath(); g.arc(p[0],p[1],v[3]==='parked'?2.5:4,0,7);
+    g.fillStyle=v[3]==='driving'?css('--car'):v[3]==='parked'?css('--parked'):css('--charge'); g.fill()}
+  for(const b of fr.bus||[]){const p=P(b[1],b[2]); g.fillStyle=css('--bus'); g.beginPath(); g.roundRect(p[0]-9,p[1]-6,18,12,3); g.fill(); g.fillStyle='#fff'; g.fillText(b[4],p[0],p[1]+3.5)}
+  const op=(fr.operator||[])[0]; const t=fr.t, d=clock0+t;
+  $('clock').textContent=(clock0||t>=3600?`${two(d/3600)}:${two(d%3600/60)}:${two(d%60)}`:`${two(t/60)}:${two(t%60)}`)+(op?`  ${op[1]?'advisory ':''}${op[2]?'bus-priority ':''}${op[3]?'toll $'+op[3]:''}`:'');
+  if(playing&&head<frames.length-1){head=Math.min(frames.length-1,head+ +$('speed').value*0.25); $('scrub').value=Math.floor(head)}
+  requestAnimationFrame(draw);
+}
+(async()=>{meta=await api('/api/meta'); $('scenario').innerHTML=Object.keys(meta.scenarios).map(s=>`<option>${s}</option>`).join('');
+  $('backend').innerHTML=meta.llm_backends.filter(b=>b==='mock').map(b=>`<option value="${b}">mock (offline stand-in, not an LLM)</option>`).join('')
+    +Object.entries(meta.llm_presets||{}).map(([n,p])=>`<option value="preset:${n}">${n} — ${p.model}${p.key_env?' (key: '+p.key_env+' in .env)':''}</option>`).join('')
+    +meta.llm_backends.filter(b=>b!=='mock').map(b=>`<option value="${b}">${b==='openai_compatible'?'other OpenAI-compatible server':b}</option>`).join('');
+  if(meta.online)$('llmnote').textContent='Online demo: no language model is connected. Ticking LLM uses an offline stand-in; run AgMSim on your own machine to use a real model.';
+  $('backend').value='mock'; const tog=()=>$('remote').style.display=($('backend').value==='mock'||$('backend').value.startsWith('preset:'))?'none':'block'; $('backend').onchange=tog; tog();
+  $('scenario').onchange=agentRows; agentRows(); $('run').onclick=start; $('stop').onclick=()=>run&&api(`/api/run/${run}/stop`,{});
+  $('play').onclick=()=>{playing=!playing; $('play').textContent=playing?'Pause':'Play'}; $('scrub').oninput=e=>{head=+e.target.value; playing=false; $('play').textContent='Play'};
+  $('filter').onchange=()=>{$('log').innerHTML=''; renderLog(decisions)}; requestAnimationFrame(draw)})();
+</script>
+</body>
+</html>
