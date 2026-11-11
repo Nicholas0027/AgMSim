@@ -18,7 +18,8 @@ def _print_summary(metrics: dict) -> None:
     if "travelers" in metrics:
         line("travellers", metrics["travelers"], ["trips", "completion_rate", "mode_share", "trip_time_s_mean",
                                                  "generalised_cost_usd_mean", "gave_up_waiting"])
-    for name, keys in (("plans", ["people", "completed", "score_usd_mean", "people_late", "late_min_mean",
+    for name, keys in (("outcomes", ["wait_time_s_mean", "vmt_miles", "vht_hours", "traffic_speed_mph"]),
+                       ("plans", ["people", "completed", "score_usd_mean", "people_late", "late_min_mean",
                                   "activities_skipped", "reviews", "edits", "review_sensitivity"]),
                        ("vehicles", ["trips", "vkt_km", "travel_time_ratio", "reroutes", "suggestions",
                                      "suggestions_accepted", "charge_stops", "tolls_usd"]),

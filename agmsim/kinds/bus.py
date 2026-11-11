@@ -237,6 +237,7 @@ class BusKind(Kind):
                 priority = w.operator is not None and w.operator.bus_priority    # priority = bus lanes
                 moved, arrived = advance(w.net, b, w.dt, cfg.speed_factor * w.bus_factor, own_lane=priority)
                 b.m_total += moved
+                b.s_moving += w.dt
                 if not arrived:
                     continue
                 b.state = BState.DWELLING

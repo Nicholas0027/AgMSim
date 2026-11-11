@@ -121,6 +121,7 @@ class Vehicle:
     m_loaded: float = 0.0                     # metres driven with the owner on board
     m_empty: float = 0.0                      # metres driven empty (self-initiated charging trips)
     s_drive: float = 0.0
+    s_moving: float = 0.0                     # seconds on the road, whatever the purpose (for vehicle hours travelled)
     s_charge: float = 0.0                     # driving to, queueing at and using chargers
     s_queue: float = 0.0                      # of which: waiting for a free charger
     drive_s_owner: float = 0.0                # in-vehicle time experienced by owners (incl. charging stops)
@@ -153,6 +154,7 @@ class Bus:
     asked: bool = False                       # the at-stop decision is due
     skip_next: bool = False
     m_total: float = 0.0
+    s_moving: float = 0.0                     # seconds on the road between stops
     boardings: int = 0
     holds: int = 0
     skips: int = 0

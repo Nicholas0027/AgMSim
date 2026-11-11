@@ -42,6 +42,10 @@ th{color:var(--muted);font-weight:500;font-size:12px}td.num{text-align:right;fon
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;flex:none}
 .fb{margin-top:4px;color:var(--ink2);font-size:11.5px}.fb select{width:auto;padding:2px 4px}
 #llmsec{display:none}#llmnote{margin-top:6px}
+#chat{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:5px}
+.msg{padding:6px 9px;border-radius:9px;max-width:94%;font-size:12.5px;overflow-wrap:anywhere}
+.msg.me{align-self:flex-end;background:var(--accent);color:#fff}.msg.it{align-self:flex-start;background:var(--wash)}.msg.err{color:var(--critical)}
+#extras .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}#extras .note{margin-top:8px}
 #status{color:var(--ink2);margin-top:10px;font-size:12px}#status.err{color:var(--critical)}
 /* map */
 #mapcard{flex:1 1 430px;min-height:400px;display:flex;flex-direction:column;padding:10px}
@@ -102,6 +106,11 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
 <header><h1>AgMSim</h1><span class="tag">Agentic Mobility Simulator: who decides, and with how much authority, is set for every kind of agent</span></header>
 <main>
 <section id="setup" class="card">
+  <h2>Assistant <span class="plain">say what you want to run</span></h2>
+  <div id="chat" aria-live="polite"></div>
+  <div class="row" style="margin-top:6px"><input id="ask" type="text" aria-label="Message to the assistant"
+    placeholder="e.g. 300 travellers, vehicles at L3, slow the bridge from 17:30"><button id="send" style="flex:none">Send</button></div>
+  <div class="note muted" style="margin-top:5px">It fills in the form below from your words, using the language model chosen further down. Nothing runs until you press Run or ask it to.</div>
   <h2>Scenario</h2>
   <select id="scenario" aria-label="Scenario"></select><div class="note" id="desc" style="margin-top:5px"></div>
   <div class="row"><div><label for="seed">Seed</label><input id="seed" type="number"></div>
@@ -110,8 +119,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
   <table id="agents"><thead><tr><th>Kind</th><th>Decided by</th><th>Agency</th></tr></thead><tbody></tbody></table>
   <div class="note" style="margin-top:6px">Every kind of agent is decided by one model: a built-in one, or a language model (LLM). Agency sets what it is allowed to decide.</div>
   <div class="note muted" id="levelnote" style="margin-top:4px"></div>
+  <div id="extras"></div>
   <div id="llmsec">
-    <h2>Language model <span class="plain">for the kinds decided by LLM</span></h2>
+    <h2>Language model <span class="plain">for the assistant and the kinds decided by LLM</span></h2>
     <select id="backend" aria-label="Language model"></select>
     <div id="remote"><label for="base_url">Base URL</label><input id="base_url" type="text" value="http://127.0.0.1:8089/v1">
       <label for="model">Model</label><input id="model" type="text" value="Qwen/Qwen2.5-7B-Instruct"></div>
@@ -179,6 +189,7 @@ const MODEL_HINT={rule:'built-in: fixed behaviour',algorithm:'built-in: computes
 const MODE_COLOR={walk:'var(--k-traveler)',car:'var(--k-vehicle)',bus:'var(--k-bus)','car+bus':'var(--k-evcs)'};
 let meta, run=null, header=null, frames=[], decisions=[], head=0, playing=true, timer=null, polling=false;
 let nodes={}, box=null, clock0=0, dt=1, horizon=1, theme={}, model=null, hoverT=null, selected=null, story=null, agentFilter=null;
+let chat=[], extra={}, chatUsed=false;      // the conversation with the assistant; settings it made that the form has no control for
 async function api(path,body){if(window.agmsimBackend)return window.agmsimBackend(path,body);   // online demo: the simulator runs in this page
   const r=await fetch(path,body?{method:'POST',body:JSON.stringify(body)}:{});return r.json()}
 const dayClock=v=>{if(typeof v!=='string')return +v||0; const p=v.split(':').map(Number); return p[0]*3600+p[1]*60+(p[2]||0)};
@@ -207,13 +218,14 @@ function agentRows(){
       <div class="fb">if its reply is unusable: <select data-k="${k}" data-f="fallback" aria-label="${k} fallback">${pol.map(p=>`<option ${p===a.policy?'selected':''}>${p}</option>`).join('')}</select></div></td>
     <td><select data-k="${k}" data-f="agency" aria-label="${k} agency level">${Object.keys(kd.levels).map(l=>`<option ${l===lvl?'selected':''} title="${kd.levels[l].join(', ')||'no authority'}">${l}</option>`).join('')}</select></td>`}
   tb.querySelectorAll('select[data-f=model]').forEach(e=>e.onchange=llmSection); llmSection();
+  tb.querySelectorAll('select[data-f=agency]').forEach(e=>e.onchange=()=>{delete extra[`agents.${e.dataset.k}.agency`]; renderExtras()});
   $('levelnote').textContent=Object.entries(meta.level_names).map(([k,v])=>`${k} ${v}`).join(' · ');
 }
 // Each kind has exactly one decision model. The language-model settings appear only when some kind uses one.
 function llmSection(){
   let any=false;
   document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const on=e.value==='llm'; any=any||on; e.parentNode.querySelector('.fb').style.display=on?'block':'none'});
-  $('llmsec').style.display=any?'block':'none'; backendFields();
+  $('llmsec').style.display=any||chatUsed?'block':'none'; backendFields();
 }
 function backendFields(){
   const b=$('backend').value, preset=b.startsWith('preset:')?meta.llm_presets[b.slice(7)]:null, other=!preset&&b!=='mock';
@@ -225,18 +237,25 @@ function backendFields(){
     :preset&&!preset.key_env?`Calls go from your browser to ${preset.base_url}: that server has to be running on your own machine and accept requests from web pages.`
     :`The key stays in this browser tab and is sent only to ${preset?preset.base_url:'the address above'}. It is not saved anywhere. Calls are made one at a time, so a run takes minutes, and they are billed to your key.`;
 }
+const control=(k,f)=>document.querySelector(`#agents select[data-f=${f}][data-k="${k}"]`);
+function formSettings(){                    // everything the form sets now, as {key: value}; what the assistant added on top wins
+  const out={'simulation.seed':+$('seed').value,'agents.traveler.count':+$('count').value};
+  document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const k=e.dataset.k, on=e.value==='llm';
+    out[`agents.${k}.use_llm`]=on; out[`agents.${k}.non_llm_policy`]=on?control(k,'fallback').value:e.value; out[`agents.${k}.agency`]=control(k,'agency').value});
+  return {...out,...extra};
+}
+async function llmSpec(){                   // the chosen language model; in the online demo the visitor's key is handed over first (see agmsim/browser.py)
+  const b=$('backend').value, name=b.startsWith('preset:')?b.slice(7):null, preset=name?meta.llm_presets[name]:null; let keyed=false;
+  if(meta.online&&b!=='mock'){const key=$('apikey').value.trim(), env=preset?preset.key_env:(key?'AGMSIM_API_KEY':null);
+    if(preset&&preset.key_env&&!key)return {error:'Type your API key for this provider first.'};
+    if(env){await api('/api/key',{env,key}); keyed=!preset}}
+  return preset?{preset:name}:b==='mock'?{backend:'mock'}:{backend:b,base_url:$('base_url').value,model:$('model').value,...(keyed?{api_key_env:'AGMSIM_API_KEY'}:{})};
+}
 async function start(){
-  const ov=[`simulation.seed=${$('seed').value}`,`agents.traveler.count=${$('count').value}`]; let llm=false;
-  document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const k=e.dataset.k, on=e.value==='llm'; llm=llm||on;
-    ov.push(`agents.${k}.use_llm=${on}`,`agents.${k}.non_llm_policy=${on?document.querySelector(`#agents select[data-f=fallback][data-k="${k}"]`).value:e.value}`)});
-  document.querySelectorAll('#agents select[data-f=agency]').forEach(e=>ov.push(`agents.${e.dataset.k}.agency=${e.value}`));
-  const b=$('backend').value, preset=b.startsWith('preset:')?meta.llm_presets[b.slice(7)]:null;
-  if(llm){ if(preset) ov.push(`llm.preset=${b.slice(7)}`);
-    else{ov.push(`llm.backend=${b}`); if(b!=='mock') ov.push(`llm.base_url=${$('base_url').value}`,`llm.model=${$('model').value}`)}
-    if(meta.online&&b!=='mock'){          // online demo: the visitor's own key, kept in this tab (see agmsim/browser.py)
-      const key=$('apikey').value.trim(), env=preset?preset.key_env:(key?'AGMSIM_API_KEY':null);
-      if(preset&&preset.key_env&&!key){$('status').textContent='Type your API key for this provider first.'; $('status').className='err'; $('apikey').focus(); return}
-      if(env){await api('/api/key',{env,key}); if(!preset)ov.push('llm.api_key_env=AGMSIM_API_KEY')} } }
+  const settings=formSettings(), ov=Object.entries(settings).map(([k,v])=>`${k}=${JSON.stringify(v)}`);
+  if(Object.entries(settings).some(([k,v])=>k.endsWith('.use_llm')&&v)){const spec=await llmSpec();
+    if(spec.error){$('status').textContent=spec.error; $('status').className='err'; $('apikey').focus(); return}
+    for(const [k,v] of Object.entries(spec))ov.push(`llm.${k}=${v}`)}
   const r=await api('/api/run',{scenario:$('scenario').value,overrides:ov});
   run=r.id; header=null; frames=[]; decisions=[]; head=0; playing=true; model=null; selected=null; story=null; agentFilter=null; $('play').textContent='Pause';
   $('log').textContent=''; $('metrics').textContent='Running…'; $('metrics').className='note'; $('status').className=''; $('story').textContent='Click a decision above.'; $('story').className='note';
@@ -256,6 +275,37 @@ async function poll(){
   if(r.status==='error')$('status').className='err';
   if(r.metrics)renderMetrics(r.metrics);
   if(['done','stopped','error'].includes(r.status)&&!r.frames.length&&!r.decisions.length){clearInterval(timer); if(selected!==null)select(selected)}
+}
+
+// ---------------------------------------------------------------- assistant
+function renderChat(waiting){const host=$('chat'); host.textContent='';
+  for(const m of chat)host.append(el('div','msg '+(m.role==='user'?'me':'it')+(m.err?' err':''),m.text));
+  if(waiting)host.append(el('div','msg it','…')); host.scrollTop=host.scrollHeight}
+function renderExtras(){const host=$('extras'); host.textContent=''; const keys=Object.keys(extra); if(!keys.length)return;
+  const wrap=el('div','chips'); host.append(el('div','note','Also set, from the assistant (click to remove):'),wrap);
+  for(const k of keys){const v=extra[k], b=el('button','chip',(Array.isArray(v)?`${k}: ${v.length} ${v.length===1?'entry':'entries'}`:`${k} = ${typeof v==='object'?JSON.stringify(v):v}`)+' ×');
+    b.title=JSON.stringify(v); b.onclick=()=>{delete extra[k]; renderExtras()}; wrap.append(b)}}
+function applySettings(scenario,set){        // a proposal goes into the form where the form has a control, and is listed below it where it has none
+  if(scenario&&scenario!==$('scenario').value&&meta.scenarios[scenario]){$('scenario').value=scenario; extra={}; agentRows()}
+  for(const [k,v] of Object.entries(set||{}).sort()){const m=k.match(/^agents\.(\w+)\.(agency|non_llm_policy|use_llm)$/);
+    if(k==='simulation.seed')$('seed').value=v; else if(k==='agents.traveler.count')$('count').value=v;
+    else if(m&&control(m[1],'model')){const md=control(m[1],'model'), fb=control(m[1],'fallback'), ag=control(m[1],'agency');
+      if(m[2]==='agency'){if(typeof v==='string'&&[...ag.options].some(o=>o.value===v)){ag.value=v; delete extra[k]} else extra[k]=v}
+      else if(m[2]==='non_llm_policy'){fb.value=v; if(md.value!=='llm')md.value=v}
+      else md.value=v?'llm':fb.value}
+    else extra[k]=v}
+  llmSection(); renderExtras();
+}
+async function sendChat(){
+  const text=$('ask').value.trim(); if(!text)return; $('ask').value=''; chat.push({role:'user',text}); chatUsed=true;
+  const ready=Object.entries(meta.llm_presets||{}).find(([,p])=>p.has_key);      // a hosted model whose key is on this machine
+  if($('backend').value==='mock'&&ready){$('backend').value='preset:'+ready[0]; chat.push({role:'assistant',text:`Using ${ready[0]} to read your request (change it under Language model).`})}
+  llmSection(); renderChat(true);
+  let out; const spec=await llmSpec();
+  if(spec.error)out={reply:spec.error,error:spec.error};
+  else try{out=await api('/api/chat',{messages:chat.map(m=>({role:m.role,text:m.text})),scenario:$('scenario').value,settings:formSettings(),llm:spec})}catch(e){out={reply:String(e),error:String(e)}}
+  chat.push({role:'assistant',text:out.reply||'No answer.',err:!!out.error}); renderChat();
+  if(!out.error){applySettings(out.scenario,out.set); if(out.run)start()}
 }
 
 // ---------------------------------------------------------------- decisions
@@ -398,6 +448,11 @@ function renderTable(){
 // ---------------------------------------------------------------- results
 function renderMetrics(m){
   const host=$('metrics'); host.textContent=''; host.className=''; const T=m.travelers||{}, P=m.plans, V=m.vehicles, L=m.llm, tiles=[];
+  const O=m.outcomes; if(O){const n=v=>v>=100?Math.round(v).toLocaleString():v.toFixed(1);
+    tiles.push(['Average waiting time',mins(O.wait_time_s_mean),'for transport, per completed trip']);
+    tiles.push(['Vehicle miles travelled',n(O.vmt_miles)+' mi',`VMT · ${n(O.vkt_km)} km, cars and buses`]);
+    tiles.push(['Vehicle hours travelled',n(O.vht_hours)+' h','VHT · time vehicles were on the road']);
+    tiles.push(['Average traffic speed',O.traffic_speed_mph===null?'–':O.traffic_speed_mph.toFixed(1)+' mph',O.traffic_speed_kmh===null?'no vehicle moved':`${O.traffic_speed_kmh.toFixed(1)} km/h · VMT ÷ VHT`])}
   if(m.travelers){tiles.push(['Trips completed',String(T.completed),`of ${T.trips} (${Math.round(T.completion_rate*100)}%)`]);
     tiles.push(['Mean trip time',mins(T.trip_time_s_mean),`9 in 10 under ${mins(T.trip_time_s_p90)}`])}
   if(P){tiles.push(['Mean day-plan score','$'+P.score_usd_mean.toFixed(2),'what the day was worth to the person']);
@@ -407,7 +462,7 @@ function renderMetrics(m){
   const asked=Object.values(m.decisions).reduce((a,d)=>a+d.decided,0), usedAll=Object.values(m.decisions).reduce((a,d)=>a+d.exercised,0);
   if(L.calls||L.replayed)tiles.push(['Model calls',String(L.calls),`${L.fallbacks} fell back to a built-in model`]);
   else tiles.push(['Decisions asked',String(asked),`${usedAll} used their authority`]);
-  const grid=el('div'); grid.id='tiles'; for(const [l,v,s] of tiles.slice(0,6)){const t=el('div','tile'); t.append(el('div','tl',l),el('div','tv',v),el('div','ts',s)); grid.append(t)} host.append(grid);
+  const grid=el('div'); grid.id='tiles'; for(const [l,v,s] of tiles.slice(0,10)){const t=el('div','tile'); t.append(el('div','tl',l),el('div','tv',v),el('div','ts',s)); grid.append(t)} host.append(grid);
   const modes=Object.entries(T.mode_share||{}).filter(([,v])=>v>0);
   if(modes.length>1){host.append(el('h2','','How trips were made')); const seg=el('div','seg'), lg=el('div','legend');
     for(const [name,share] of modes){const b=el('div'); b.style.flex=share; b.style.background=MODE_COLOR[name]||'var(--k-other)'; if(name==='car+bus')b.style.color='#0b0b0b';
@@ -420,6 +475,8 @@ function renderMetrics(m){
     mt.append(name,bar,el('div','mv',d.decided?`${d.exercised} of ${d.decided}`:d.forced?`no authority (${d.forced} defaults)`:'not asked'))}
   host.append(mt, el('div','note muted','Share of the decisions an agent was asked for in which it chose something other than the default.'));
   const all=el('details'), rows=[], add=(g,k,label)=>{if(m[g]&&m[g][k]!==undefined&&m[g][k]!==null)rows.push([label,typeof m[g][k]==='object'?Object.entries(m[g][k]).map(([a,b])=>`${a} ${(b*100).toFixed(0)}%`).join(', '):m[g][k]])};
+  add('outcomes','wait_time_s_mean','Average waiting time (s)'); add('outcomes','vmt_miles','Vehicle miles travelled (VMT)'); add('outcomes','vkt_km','Vehicle kilometres travelled');
+  add('outcomes','vht_hours','Vehicle hours travelled (VHT)'); add('outcomes','traffic_speed_mph','Average traffic speed (mph)'); add('outcomes','traffic_speed_kmh','Average traffic speed (km/h)');
   add('travelers','completion_rate','Trips completed (share)'); add('travelers','mode_share','Mode share'); add('travelers','trip_time_s_mean','Mean trip time (s)'); add('travelers','trip_time_s_p90','Trip time, 90th percentile (s)');
   add('travelers','generalised_cost_usd_mean','Mean generalised cost (USD)'); add('travelers','gave_up_waiting','Gave up waiting for a bus');
   add('plans','score_usd_mean','Day plans: mean score (USD)'); add('plans','activities_usd_mean','… of which activities'); add('plans','travel_usd_mean','… travel time'); add('plans','late_usd_mean','… lateness'); add('plans','money_usd_mean','… money paid');
@@ -473,7 +530,8 @@ function draw(){
     +meta.llm_backends.filter(b=>b!=='mock').map(b=>`<option value="${b}">${b==='openai_compatible'?'another OpenAI-compatible server':b}</option>`).join('')
     +'<option value="mock">offline stand-in (not a language model)</option>';
   $('backend').value='mock'; $('backend').onchange=backendFields;
-  $('scenario').onchange=agentRows; agentRows(); $('run').onclick=start; $('stop').onclick=()=>run&&api(`/api/run/${run}/stop`,{});
+  $('scenario').onchange=()=>{extra={}; agentRows(); renderExtras()}; agentRows(); $('run').onclick=start;
+  $('send').onclick=sendChat; $('ask').onkeydown=e=>{if(e.key==='Enter')sendChat()}; $('stop').onclick=()=>run&&api(`/api/run/${run}/stop`,{});
   $('play').onclick=()=>{playing=!playing; $('play').textContent=playing?'Pause':'Play'}; $('scrub').oninput=e=>{head=+e.target.value; playing=false; $('play').textContent='Play'};
   $('filter').onchange=refillLog; $('onlyused').onchange=refillLog; $('tstable').ontoggle=()=>$('tstable').open&&renderTable();
   const charts=$('charts'), timeOf=e=>{const svg=e.target.closest('svg.ts'); if(!svg||!model)return null; const r=svg.getBoundingClientRect(); return Math.max(0,Math.min(1,(e.clientX-r.left-CH.L)/model.pw))*horizon};

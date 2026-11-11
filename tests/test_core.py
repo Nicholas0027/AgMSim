@@ -800,3 +800,63 @@ def test_frames_carry_what_the_charts_need_and_an_agents_day_can_be_asked_for():
     car = json.loads(browser.request(f"/api/run/{run_id}/agent/{story['car']}"))
     assert car["kind"] == "vehicle" and car["owner"] == changed and "timeline" not in car
     assert json.loads(browser.request(f"/api/run/{run_id}/agent/nobody")) == {}
+
+
+def test_outcome_variables_waiting_vmt_vht_and_traffic_speed():
+    sim, res = run("city_multimodal")
+    o, w = res.metrics["outcomes"], sim.world
+    assert o["vmt_miles"] == pytest.approx(o["vkt_km"] / 1.609344, rel=1e-3) and o["vkt_km"] > res.metrics["vehicles"]["vkt_km"]   # buses count too
+    assert o["traffic_speed_mph"] == pytest.approx(o["vmt_miles"] / o["vht_hours"], rel=1e-3)
+    free = max(link.speed for link in w.net.links) * 3.6
+    assert 5 < o["traffic_speed_kmh"] <= free                       # between a crawl and free flow
+    assert all(v.s_moving <= sim.n_ticks * sim.dt for v in w.vehicles.values())
+    waited = [t.waited_ticks * sim.dt for t in w.travelers.values() if t.state == TState.ARRIVED]
+    assert o["wait_time_s_mean"] == pytest.approx(sum(waited) / len(waited), abs=1e-3) and 0 < o["wait_time_s_mean"] < res.metrics["travelers"]["bus_wait_s_mean"]
+    _, cars = run()                                                   # no buses: nobody waits for transport
+    assert cars.metrics["outcomes"]["wait_time_s_mean"] == 0.0 and cars.metrics["outcomes"]["vht_hours"] > 0
+
+
+def test_assistant_turns_a_request_into_checked_settings():
+    from agmsim import assistant, browser
+    from agmsim.llm import LLMClient, LLMResponse, register_llm
+
+    replies, seen = [], []
+
+    @register_llm("scripted")
+    class Scripted(LLMClient):                 # stands in for the language model behind the assistant
+        backend = "scripted"
+
+        def _complete(self, request):
+            seen.append(request)
+            return LLMResponse(replies.pop(0), "scripted", 10, 10)
+
+    llm = {"backend": "scripted", "model": "x"}
+    ask = lambda text, **extra: assistant.configure({"messages": [{"role": "user", "text": text}],   # noqa: E731
+                                                     "scenario": "evening_plans", "llm": llm, **extra})
+    replies.append('Sure. {"reply": "Vehicles now negotiate; 300 people.", "scenario": null, '
+                   '"set": {"agents.vehicle.agency": "L3", "agents.traveler.count": 300}, "run": true}')
+    out = ask("300 travellers and vehicles at level 3, then run it")
+    assert out["set"] == {"agents.vehicle.agency": "L3", "agents.traveler.count": 300} and out["run"] and "error" not in out
+    assert "evening_plans" in seen[0].system and "L3" in seen[0].system and "clock_start: 16:30" in seen[0].user
+    # a proposal that does not hold is sent back once with the reason; the corrected one is used
+    replies += ['{"reply": "x", "set": {"agents.bus.agency": "L1"}}',
+                '{"reply": "This scenario has no buses, so I slowed the bridge instead.", "set": {"interventions": '
+                '[{"type": "link_condition", "at_seconds": 3600, "until_seconds": 7200, "factor": 0.05, "links": [[7, 20]]}]}}']
+    out = ask("let the buses hold at stops")
+    assert out["set"]["interventions"][0]["links"] == [[7, 20]] and "has no bus" in seen[-1].user
+    # nothing usable twice: nothing is changed, and the reason is reported
+    replies += ['{"reply": "x", "set": {"llm.model": "other"}}', '{"reply": "x", "set": {"interventions": '
+                '[{"type": "link_condition", "at_seconds": 0, "factor": 0.1, "links": [[0, 31]]}]}}']
+    out = ask("use another model")
+    assert out["set"] == {} and not out["run"] and "no road between" in out["error"]
+    for bad in ({"agents.vehicle.agency": "L9"}, {"agents.vehicle.non_llm_policy": "magic"}, {"simulation.sed": 1},
+                {"record.dir": "x"}, {"agents.traveler.mix": [{"agency": "L1"}]}):
+        assert assistant.check("evening_plans", bad)
+    assert assistant.check("evening_plans", {"agents.vehicle.mix": [{"share": 0.3, "agency": "L3"}], "network.capacity_scale": 0.1}) is None
+    assert assistant.check("nowhere", {}).startswith("there is no scenario")
+    assert "needs a language model" in assistant.configure({"messages": [{"role": "user", "text": "hi"}], "llm": {"backend": "mock"}})["error"]
+    assert assistant.extract_json('<think>{"a": 1}</think> text {"reply": "say \\"hi\\" {now}", "set": {}} tail')["reply"] == 'say "hi" {now}'
+    replies.append('{"reply": "ok", "set": {"simulation.seed": 5}}')            # the page reaches it through the same router
+    via = json.loads(browser.request("/api/chat", json.dumps({"messages": [{"role": "user", "text": "seed 5"}],
+                                                              "scenario": "demo_3x3", "llm": llm})))
+    assert via["set"] == {"simulation.seed": 5} and via["scenario"] == "demo_3x3"

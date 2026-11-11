@@ -11,6 +11,7 @@ requests through :func:`route`, moving the run forward with :meth:`Run.advance`.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import traceback
@@ -20,11 +21,12 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from . import kinds as _kinds, policies as _policies  # noqa: F401
+from . import assistant
 from .agency import LEVEL_NAMES
 from .config import LLM_PRESETS, Config, list_scenarios
 from .engine import Simulation
 from .kinds.base import KINDS
-from .llm import LLM_BACKENDS
+from .llm import LLM_BACKENDS, load_env_file
 from .policies.base import available_policies
 from .recorder import Recorder
 
@@ -172,7 +174,11 @@ def meta(online: bool = False) -> dict:
                            "agents": {k: {"use_llm": getattr(cfg.agents, k).use_llm,
                                           "policy": getattr(cfg.agents, k).non_llm_policy,
                                           "agency": getattr(cfg.agents, k).agency} for k in cfg.active_kinds()}}
-    presets = {name: {"model": p.get("model", ""), "key_env": p.get("api_key_env"), "base_url": p.get("base_url", "")}
+    if not online:                      # so the page can tell which hosted models are ready to use on this machine
+        load_env_file()
+        load_env_file(Path(__file__).resolve().parent.parent)
+    presets = {name: {"model": p.get("model", ""), "key_env": p.get("api_key_env"), "base_url": p.get("base_url", ""),
+                      "has_key": bool(p.get("api_key_env") and os.environ.get(p["api_key_env"]))}
                for name, p in LLM_PRESETS.items() if name != "mock"}
     return {"scenarios": scenarios, "kinds": kinds, "level_names": LEVEL_NAMES, "llm_presets": presets,
             "llm_backends": LLM_BACKENDS.names(), "online": online}
@@ -207,6 +213,8 @@ def route(method: str, path: str, query: Optional[dict] = None, body: Optional[d
             overrides = list(body.get("overrides", [])) + (["llm.max_concurrency=1"] if online else [])
             RUNS[run_id] = Run(run_id, body.get("scenario", "demo_3x3"), overrides, threaded=not online)
         return 200, {"id": run_id}
+    elif parts == ["api", "chat"]:               # the assistant: a request in words -> proposed settings
+        return 200, assistant.configure(body or {})
     elif run is not None and len(parts) == 4 and parts[3] == "stop":
         run.stop = True
         return 200, {"ok": True}

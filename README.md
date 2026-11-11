@@ -51,6 +51,11 @@ model or an LLM) and its agency level, watch the run and inspect any decision. O
 
 What the page shows:
 
+- **Assistant** — say what you want to run ("evening plans with 200 travellers, vehicles at L3 with 30%
+  staying at L0, slow the bridge from 17:30 to 18:30, then run it") and a language model fills in the
+  form. Its proposal is checked like any configuration before it is used (`agmsim/assistant.py`); what the
+  form has no control for is listed below the form and can be removed. It needs a real language model:
+  on your machine a hosted model whose key is in `.env` is picked automatically, online you type a key.
 - **Map** — agents on the network; roads darken as traffic slows, incidents are marked, and the agent
   of the selected decision is ringed.
 - **Over the run** — three charts on one time axis: travellers by stage, traffic speed as a share of
@@ -71,6 +76,58 @@ LLM types their own key into the page; it is kept in that tab's memory only, nev
 configuration or trace, and the browser itself calls the provider (which must accept requests from web
 pages; DeepSeek's API does). `sh online/publish.sh` rebuilds it and
 pushes it to the `gh-pages` branch, which GitHub Pages serves.
+
+## Outcome variables
+
+Every run reports four system-level measures under `outcomes` (they lead the results on the page and in
+`agmsim run`):
+
+| Variable | Key | Meaning |
+| - | - | - |
+| Average waiting time | `wait_time_s_mean` | time travellers wait for transport (at a stop), per completed trip; trips without a wait count as 0 |
+| VMT | `vmt_miles` (`vkt_km`) | vehicle miles travelled by cars and buses |
+| VHT | `vht_hours` | vehicle hours travelled: time cars and buses spend on the road |
+| Average traffic speed | `traffic_speed_mph` (`traffic_speed_kmh`) | VMT ÷ VHT |
+
+Further measures by kind of agent (`travelers`, `plans`, `vehicles`, `bus`, `evcs`, `operator`), and what
+agents were asked and decided (`decisions`, `llm`), follow them.
+
+## Modules, and where each stands
+
+| Module | Part | Status |
+| - | - | - |
+| **Physical infrastructure** | road network (grid, two banks with bridges, or from a file) | done |
+| | charging stations | done |
+| | external events (incidents on links; a change of agency during the run; a venue emptying) | partly: no weather or demand shocks yet |
+| | destinations as points of interest | not yet: activities take place at network nodes |
+| **Entity agents** | traveller, private car (agentic vehicle), bus, charging station | done |
+| | orchestrator | partly: the `operator` publishes advisories, switches bus priority and sets a cordon charge; it does not yet instruct signals, buses or cars individually |
+| | on-demand car | not yet in this engine (an earlier version is kept in `archive/ridesourcing/`) |
+| | traffic lights | not yet: junctions cause no delay |
+| **Agency mechanism** | observation: what an agent is shown at a decision point; a vehicle's knowledge of traffic can be none, local or global | done per kind; not yet a setting of its own |
+| | memory: a language model sees its last decisions and their outcomes | partly: one fixed form (`memory: 4`) |
+| | interaction: a vehicle proposes, its owner answers; everything else passes through prices, published information and shared roads | partly: no general messages between agents |
+| **Simulation engine** | a controlled Markov process, see below | done |
+| **Interface** | web page, online demo, command line, Python | done |
+| | configuration by conversation | done (the assistant) |
+
+### The engine as a Markov process
+
+A run is a controlled Markov process in discrete time. The state `S_t` is everything in `agmsim.world.World`
+(where every person and vehicle is and what it is doing, queues, prices, link conditions, the clock). In each
+step
+
+1. exogenous input `ξ_t` arrives: trip needs and scheduled events, all fixed by the scenario and the seed;
+2. every agent `i` that has a decision point is shown an observation `o_i = O_i(S_t)` — a function of the
+   state alone, the same state for all of them — and its decision model returns an action `a_i` from the
+   actions its agency permits; an agent without authority there takes the default action;
+3. the state moves on: `S_{t+1} = F(S_t, A_t, ξ_t)`, with actions applied in a fixed order.
+
+`F` and `O_i` have no randomness of their own, so the next state depends only on the current state, the
+actions and the exogenous input — never on how the state was reached. What an agent remembers (a language
+model's recent history) belongs to its decision model, not to the environment. This is why a recorded run
+can be replayed decision by decision to the identical state, and why the same model can be put behind any
+agent. The outcome variables are functions of the trajectory `S_0 … S_T`.
 
 ## The five built-in kinds of agent
 

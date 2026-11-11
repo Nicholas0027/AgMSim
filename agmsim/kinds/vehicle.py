@@ -431,6 +431,7 @@ class VehicleKind(Kind):
             if v.path:
                 moved, arrived = advance(w.net, v, dt, w.car_factor)
                 v.trip_m += moved
+                v.s_moving += dt
                 if v.passenger is not None:
                     v.m_loaded += moved
                 else:

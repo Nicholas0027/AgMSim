@@ -135,6 +135,21 @@ def compute_metrics(sim) -> dict:
     if planners:
         out["plans"] = _plan_metrics(sim, planners)
 
+    # ---------------------------------------------------------------- outcome variables of the whole system
+    # The four headline measures: what travellers wait, and how much, how long and how fast vehicles move.
+    done = [t for t in travelers if t.state == TState.ARRIVED]
+    metres = sum(v.m_loaded + v.m_empty for v in w.vehicles.values()) + sum(b.m_total for b in w.buses.values())
+    seconds = sum(v.s_moving for v in w.vehicles.values()) + sum(b.s_moving for b in w.buses.values())
+    out["outcomes"] = {
+        # time spent waiting for transport (at a stop), per completed trip; trips that needed no wait count as 0
+        "wait_time_s_mean": _mean(t.waited_ticks * dt for t in done),
+        "vmt_miles": round(metres / 1609.344, 2),                  # vehicle miles travelled: cars and buses
+        "vkt_km": round(metres / 1000.0, 2),
+        "vht_hours": round(seconds / 3600.0, 3),                   # vehicle hours travelled: time on the road
+        "traffic_speed_mph": round(metres / 1609.344 / (seconds / 3600.0), 2) if seconds else None,   # VMT / VHT
+        "traffic_speed_kmh": round(metres / 1000.0 / (seconds / 3600.0), 2) if seconds else None,
+    }
+
     # ---------------------------------------------------------------- private agentic vehicles
     if w.vehicles:
         vehicles = list(w.vehicles.values())
