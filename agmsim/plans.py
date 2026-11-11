@@ -74,6 +74,7 @@ class Activity:
     outside_s: float = 0.0                   # time spent at it before or after the simulated period
     priority: float = 1.0                    # what doing it at all is worth: priority x rate x usual length
     optional: bool = False                   # may be dropped from the plan
+    poi: Optional[str] = None                # the point of interest it takes place at, if any
     # what happened ----------------------------------------------------------
     arrived_s: Optional[float] = None
     left_s: Optional[float] = None
@@ -104,6 +105,7 @@ class Plan:
     leg: Optional[dict] = None                   # the trip under way
     expected: Optional[dict] = None              # activity index -> arrival time the person reckons with
     pending: Optional[dict] = None               # a review prepared for this tick
+    notice: str = ""                             # news that calls for a look at the plan (a place closing early)
     follow_up: bool = False                      # the plan was just changed: one more look at it
     next_check: int = 0                          # tick of the next look at how the day is going
     reviews: int = 0
@@ -229,12 +231,14 @@ def option_value(prefs: dict, context: dict, option: dict) -> float:
 
 
 def build_plan(template: list, net, rng, first_end_s: float, origin: int, destination: int, clock0: float,
-               horizon_s: float, time_factor: float) -> Plan:
+               horizon_s: float, time_factor: float, pois: "dict | None" = None) -> Plan:
     """One person's plan from the scenario's template (``demand.plan``).
 
     Each entry describes an activity: ``type``; ``at`` (``origin`` for the first, ``destination``
     for the last, otherwise ``on_the_way`` -- a node that adds little detour --, ``random``, a
-    node or a list of nodes to draw from); ``share`` (how many people have it; middle activities
+    node, a list of nodes to draw from, or ``{poi: <type>}`` -- the point of interest of that type
+    that adds the least detour, whose opening hours the activity then has); ``share`` (how many
+    people have it; middle activities
     only); ``end`` (a time of day, with ``end_spread_min``) or ``duration_min``; ``opens``,
     ``closes``; ``latest_start`` (a time of day) or ``latest_start_slack_min`` (that long after
     the planned arrival); ``typical_min`` (default: the planned length); ``priority``;
@@ -249,7 +253,13 @@ def build_plan(template: list, net, rng, first_end_s: float, origin: int, destin
     def at_s(value) -> float:
         return parse_clock(value) - clock0
 
-    def place(spec, previous: int) -> int:
+    def place(spec, previous: int):
+        if isinstance(spec, dict):              # at a point of interest of that type
+            from .pois import on_the_way
+            found = on_the_way(pois or {}, str(spec.get("poi")), previous, destination, net)
+            if found is None:
+                raise ValueError(f"demand.plan: there is no point of interest of type '{spec.get('poi')}'")
+            return found
         if spec == "origin":
             return origin
         if spec == "destination":
@@ -267,9 +277,11 @@ def build_plan(template: list, net, rng, first_end_s: float, origin: int, destin
     for n, item in enumerate(chosen):
         first, final = n == 0, n == len(chosen) - 1
         here = place(item.get("at", "origin" if first else "destination" if final else "on_the_way"), node)
+        spot, here = (here, here.node) if not isinstance(here, int) else (None, here)
         arrive = 0.0 if first else t + time_factor * net.time(node, here)
         a = Activity(str(item["type"]), here, priority=float(item.get("priority", 1.0)),
-                     optional=bool(item.get("optional", False)) and not (first or final))
+                     optional=bool(item.get("optional", False)) and not (first or final),
+                     poi=spot.id if spot is not None else None)
         if not final:
             if "end" in item:
                 spread = 60.0 * float(item.get("end_spread_min", 0.0))
@@ -278,8 +290,8 @@ def build_plan(template: list, net, rng, first_end_s: float, origin: int, destin
                 a.end_s = first_end_s
             else:
                 a.duration_s = 60.0 * float(item.get("duration_min", 30.0))
-        a.open_s = at_s(item["opens"]) if "opens" in item else None
-        a.close_s = at_s(item["closes"]) if "closes" in item else None
+        a.open_s = at_s(item["opens"]) if "opens" in item else spot.open_s if spot is not None else None
+        a.close_s = at_s(item["closes"]) if "closes" in item else spot.close_s if spot is not None else None
         if "latest_start" in item:
             a.latest_start_s = at_s(item["latest_start"])
         elif "latest_start_slack_min" in item:

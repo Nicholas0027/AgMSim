@@ -71,8 +71,11 @@ class UtilityTraveler(Policy):
 
     def _cost(self, obs, option: dict) -> float:
         walking = option["travel_min"] if option["option"] == "walk" else option.get("walk_min", 0.0)
+        # in bad weather waiting and walking weigh more (what the environment says about it)
+        worse = (obs.context.get("environment") or {}).get("waiting_and_walking_feel_longer_by_factor", 1.0)
         return option["price_usd"] + self._vot(obs) * (
-            self.wait_weight * option["wait_min"] + option["travel_min"] + (self.walk_weight - 1.0) * walking)
+            self.wait_weight * worse * option["wait_min"] + option["travel_min"]
+            + (self.walk_weight * worse - 1.0) * walking)
 
     def decide(self, obs):
         if obs.trigger in ("need", "replan"):

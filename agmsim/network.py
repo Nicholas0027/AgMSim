@@ -43,6 +43,7 @@ class Link:
     lanes: int = 1
     factor: float = 1.0     # dynamic condition factor (incidents)
     flow: float = 1.0       # congestion factor from the vehicles currently on the link
+    ambient: float = 1.0    # conditions that slow every road alike (weather)
 
     @property
     def free_time(self) -> float:
@@ -50,7 +51,7 @@ class Link:
 
     @property
     def cur_speed(self) -> float:
-        return self.speed * max(self.factor, MIN_FACTOR) * self.flow
+        return self.speed * max(self.factor * self.ambient, MIN_FACTOR) * self.flow
 
     @property
     def cur_time(self) -> float:
@@ -85,6 +86,7 @@ def current_weight(link: Link) -> float:
 class RoadNetwork:
     def __init__(self) -> None:
         self.stop_lines: dict[int, StopLine] = {}     # link id -> stop line at its end (signalised junctions only)
+        self.ambient = 1.0                            # speed factor on every road (weather)
         self.nodes: dict[int, tuple[float, float]] = {}
         self.links: list[Link] = []
         self.out: dict[int, list[int]] = {}
@@ -168,6 +170,14 @@ class RoadNetwork:
         self.version += 1
         self._dynamic_trees.clear()
         return True
+
+    def set_ambient(self, factor: float) -> None:
+        """Slow every road alike (weather); 1 restores normal conditions."""
+        self.ambient = float(factor)
+        for link in self.links:
+            link.ambient = self.ambient
+        self.version += 1
+        self._dynamic_trees.clear()
 
     def set_flows(self, counts: dict, spacing_m: float, scale: float, floor: float = 0.15) -> None:
         """Update congestion from the number of vehicles on each link (linear speed-density relation).

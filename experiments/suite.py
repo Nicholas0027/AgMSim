@@ -41,6 +41,14 @@ PLAN_METRICS = {"plans.score_usd_mean": "计划得分(美元)", "plans.late_min_
                 "plans.review_sensitivity": "灵敏度", "plans.review_regret_usd_mean": "每次复查少得(美元)",
                 "travelers.trip_time_s_mean": "平均出行时间(秒)"}
 
+# the three events of places.yaml, so that arms can have them one at a time
+EVENTS = {
+    "rain": {"type": "weather", "label": "heavy rain", "at_seconds": 1200, "until_seconds": 3600, "speed_factor": 0.75,
+             "walk_factor": 0.85, "discomfort": 1.8},
+    "match": {"type": "demand_surge", "poi": "stadium", "at_seconds": 1800, "until_seconds": 2700, "trips": 120},
+    "block": {"type": "link_condition", "at_seconds": 2100, "until_seconds": 3900, "factor": 0.1, "links": [[14, 15], [15, 21]]},
+}
+
 EXPERIMENTS = {
     "incident": {
         "question": "事故发生时，是车有 agency 管用，还是运营方有 agency 管用？",
@@ -142,6 +150,20 @@ EXPERIMENTS = {
                     "ondemand.cancelled": "乘客放弃叫车", "ondemand.declined": "拒单次数",
                     "ondemand.repositions": "调度次数", "ondemand.empty_km_share": "空驶里程占比",
                     "ondemand.profit_usd": "车队利润(美元)", "outcomes.vmt_miles": "VMT(英里)"},
+    },
+    "places": {
+        "question": "下雨、散场、封路各自影响多大？同时发生时是简单相加吗？",
+        "scenario": "places.yaml",
+        "arms": {
+            "平静的一天（无事件）": {"events": []},
+            "只下雨": {"events": [EVENTS["rain"]]},
+            "只有散场": {"events": [EVENTS["match"]]},
+            "只封路": {"events": [EVENTS["block"]]},
+            "三件事同时发生": {},
+        },
+        "metrics": {"outcomes.wait_time_s_mean": "平均等待(秒)", "travelers.trip_time_s_mean": "平均出行时间(秒)",
+                    "outcomes.traffic_speed_mph": "平均车速(英里/时)", "travelers.mode_share.walk": "步行占比",
+                    "travelers.mode_share.ride": "叫车占比", "ondemand.cancelled": "放弃叫车", "outcomes.vmt_miles": "VMT(英里)"},
     },
     "day_plan": {
         "question": "一天的计划被突发事故打乱时，当天就改计划（而不是像 MATSim 那样靠反复重演来学）能挽回多少？",

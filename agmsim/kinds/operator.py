@@ -107,7 +107,7 @@ class OperatorKind(Kind):
 
         def speed_pct(links):
             links = list(links)
-            return round(100.0 * sum(l.flow * l.factor for l in links) / len(links)) if links else 100
+            return round(100.0 * sum(l.flow * l.factor * l.ambient for l in links) / len(links)) if links else 100
 
         state = {"objective": OBJECTIVE, "advisory_published": op.advisory, "bus_priority_on": op.bus_priority}
         context = {
@@ -119,7 +119,7 @@ class OperatorKind(Kind):
             "travellers_on_buses": sum(len(b.onboard) for b in w.buses.values()),
             "travellers_in_cars": sum(1 for v in driving if v.passenger is not None),
             # where it is slow: the roads on which traffic moves worst
-            "slowest_roads": [{"from_node": l.u, "to_node": l.v, "speed_pct_of_free_flow": round(100 * l.flow * l.factor)}
+            "slowest_roads": [{"from_node": l.u, "to_node": l.v, "speed_pct_of_free_flow": round(100 * l.flow * l.factor * l.ambient)}
                               for l in sorted((l for l in net.links if l.flow * l.factor < 0.9),
                                               key=lambda l: (l.flow * l.factor, l.id))[:5]],
         }

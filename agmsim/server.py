@@ -100,7 +100,7 @@ class Run:
                "decisions": [{k: v for k, v in d.items() if k != "obs"} | {"i": decision_from + i}
                              for i, d in enumerate(rec.decisions[decision_from:decision_from + 300])]}
         if frame_from == 0 and rec.header is not None:
-            out["header"] = {k: rec.header[k] for k in ("network", "lines", "stations", "signals", "kinds", "config")}
+            out["header"] = {k: rec.header[k] for k in ("network", "lines", "stations", "signals", "pois", "kinds", "config")}
         return out
 
 

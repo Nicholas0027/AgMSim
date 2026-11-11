@@ -53,7 +53,7 @@ canvas{flex:1;width:100%;min-height:0;display:block}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--ink2);font-size:12px;align-items:center}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
 .legend i.sq{border-radius:2px}.legend i.ln{width:14px;height:3px;border-radius:2px;vertical-align:3px}
-.legend i.ring{background:none;border:2px solid}
+.legend i.ring{background:none;border:2px solid}.legend i.box{background:none;border:1.5px solid var(--ink2);border-radius:2px}
 .legend i.ramp{width:34px;height:4px;border-radius:2px;vertical-align:3px;background:linear-gradient(90deg,var(--road),var(--road-busy))}
 #bar{display:flex;gap:8px;align-items:center;padding-top:8px}#bar input[type=range]{flex:1;padding:0;border:0;background:none;accent-color:var(--accent)}
 #clock{min-width:132px;color:var(--ink2);font-variant-numeric:tabular-nums;text-align:right}
@@ -146,6 +146,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
       <span><i class="ln" style="background:var(--k-signal)"></i>traffic light: who has green</span>
       <span><i style="background:var(--p-move)"></i>person on foot or waiting</span>
       <span><i style="background:var(--p-rest)"></i>person at an activity</span>
+      <span><i class="box"></i>place</span>
       <span><i class="ramp"></i>road: free to slow</span>
       <span><i class="ln" style="background:var(--critical)"></i>! incident</span>
     </div>
@@ -156,6 +157,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
   <section id="timecard" class="card">
     <div class="cardhead"><h2>Over the run</h2><span class="note" id="timehint">Charts appear once a run starts.</span></div>
     <div id="charts" class="empty" tabindex="0" role="group" aria-label="Charts over the run. Left and right arrows move through time, Enter shows that moment on the map.">
+      <div id="evwrap"><div class="chead"><h3>External events</h3><span class="note">what happens to the town during the run</span></div><div id="ev"></div></div>
       <div class="chead"><h3>Travellers by stage</h3><span class="legend" id="lg1"></span></div><div id="c1"></div>
       <div class="chead"><h3>Traffic speed</h3><span class="note">cars on the road, as a share of free-flow speed</span></div><div id="c2"></div>
       <div class="chead"><h3>Decisions asked</h3><span class="legend" id="lg3"></span></div><div id="c3"></div>
@@ -398,6 +400,16 @@ function renderCharts(){
   const yTick=(svg,frac,label)=>{const y=CH.T+CH.H*(1-frac); svg.append(svgEl('line',{class:frac?'gridl':'axisl',x1:CH.L,x2:CH.L+pw,y1:y,y2:y}), svgEl('text',{x:CH.L-6,y:y+3.5,'text-anchor':'end'},label))};
   const cursors=svg=>{svg.append(svgEl('line',{class:'playhead',y1:CH.T-3,y2:CH.T+CH.H}), svgEl('line',{class:'cross',y1:CH.T-3,y2:CH.T+CH.H}))};
   const Y=frac=>CH.T+CH.H*(1-frac);
+  // 0. external events as bars on the shared time axis, one row each
+  const events=(header.config.interventions||[]).filter(e=>e.at_seconds!==undefined), place=id=>((header.pois||[]).find(q=>q.id===id)||{name:id}).name;
+  $('evwrap').style.display=events.length?'block':'none';
+  if(events.length){const host=$('ev'); host.textContent=''; const rows=events.length, esvg=svgEl('svg',{class:'ts',width:W,height:rows*15+2,viewBox:`0 0 ${W} ${rows*15+2}`,role:'img'}); host.append(esvg);
+    events.forEach((e,i)=>{const from=e.at_seconds, to=e.until_seconds===undefined||e.until_seconds===null?null:e.until_seconds, y=i*15+9;
+      const name=e.type==='weather'?(e.label||'bad weather'):e.type==='link_condition'?'road blocked or slowed':e.type==='demand_surge'?`${e.trips} extra trips ${e.direction==='to'?'to':'from'} ${e.poi?place(e.poi):'node '+e.node}`:e.type==='poi_closure'?`${place(e.poi)} closes early`:`${e.kind} becomes ${e.agency}`;
+      const x1=X(from), x2=to===null?x1:Math.max(x1+3,X(to)), incident=e.type==='link_condition';
+      esvg.append(to===null?svgEl('circle',{cx:x1,cy:y,r:4,style:'fill:var(--ink2)'}):svgEl('rect',{x:x1,y:y-2.5,width:x2-x1,height:5,rx:2.5,style:`fill:var(--${incident?'critical':'ink2'})`}));
+      const right=x2+6+name.length*5.6<W; esvg.append(svgEl('text',{class:'lab',x:right?x2+6:x1-6,y:y+3.5,'text-anchor':right?'start':'end'},name));
+      const hit=svgEl('rect',{x:x1-4,y:y-7,width:Math.max(12,x2-x1+8),height:14,fill:'transparent'}); hit.onpointermove=ev=>{ev.stopPropagation(); showTip(ev.clientX,ev.clientY,[['th',name],['tg',clockText(from)+(to===null?'':' – '+clockText(to))]])}; hit.onpointerleave=hideTip; esvg.append(hit)})}
   // 1. travellers by stage: three steps of the travellers' hue, always with a legend; named at the line end when the ends are apart
   let svg=base('c1'); yTick(svg,0,'0'); yTick(svg,.5,String(Math.round(N/2))); yTick(svg,1,String(N));
   const ends=[];
@@ -492,6 +504,7 @@ function renderMetrics(m){
   add('plans','activities_skipped','Optional activities dropped'); add('plans','review_sensitivity','Changed when worth it minus when not');
   add('vehicles','travel_time_ratio','Car time / free-flow time'); add('vehicles','reroutes','Re-routes by AgVs'); add('vehicles','suggestions','Transfers suggested by AgVs'); add('vehicles','suggestions_accepted','… accepted by owners');
   add('vehicles','charge_stops','Charging trips'); add('vehicles','tolls_usd','Tolls paid (USD)'); add('bus','boardings','Bus boardings'); add('bus','holds','Bus holds'); add('evcs','revenue_usd','Station revenue (USD)');
+  add('pois','places','Places (points of interest)'); add('pois','visits','… visits'); add('pois','found_closed','… visitors who found the place closed');
   add('ondemand','requests','On-demand cars: requests'); add('ondemand','rides','… rides made'); add('ondemand','cancelled','… travellers who gave up waiting'); add('ondemand','pickup_wait_s_mean','… wait from call to pick-up (s)');
   add('ondemand','declined','… requests turned down by a car'); add('ondemand','repositions','… moves while free'); add('ondemand','empty_km_share','… share of km driven empty'); add('ondemand','profit_usd','… fares minus driving cost (USD)');
   add('signals','junctions','Junctions with traffic lights'); add('signals','wait_s_mean','Wait at traffic lights, per vehicle passing (s)'); add('signals','stopped_share','… share that had to stop');
@@ -521,6 +534,9 @@ function draw(){
     if(sg[2]<0){g.beginPath(); g.arc(c[0],c[1],2.5,0,7); g.fillStyle=theme.muted; g.fill(); continue}
     g.strokeStyle=theme.signal; g.lineWidth=3.5;
     for(const u of info.from[sg[2]]){const a=P(...nodes[u]), len=Math.hypot(a[0]-c[0],a[1]-c[1])||1; g.beginPath(); g.moveTo(c[0],c[1]); g.lineTo(c[0]+(a[0]-c[0])/len*9,c[1]+(a[1]-c[1])/len*9); g.stroke()}}
+  g.font='10px system-ui';
+  for(const poi of header.pois||[]){const c=P(...nodes[poi.node]); g.strokeStyle=theme.ink2; g.lineWidth=1.5; g.strokeRect(c[0]-5,c[1]-5,10,10); g.fillStyle=theme.ink2; g.fillText(poi.name,c[0],c[1]+17)}
+  g.font='10.5px system-ui';
   for(const stops of Object.values(header.lines||{}))for(const n of stops){const p=P(...nodes[n]); g.beginPath(); g.arc(p[0],p[1],6,0,7); g.strokeStyle=theme.bus; g.lineWidth=1.5; g.stroke()}
   for(const st of fr.evcs||[]){const p=P(...nodes[st[1]]); g.fillStyle=theme.evcs; g.beginPath(); g.roundRect(p[0]-7,p[1]-7,14,14,3); g.fill(); g.fillStyle=theme.ink2; g.fillText(`${st[0]} $${st[2]} ${st[3]}/${st[5]}+${st[4]}`,p[0],p[1]-11)}
   const who=story&&story.decision?[story.id,story.car,story.owner]:[]; let mark=null;
@@ -538,7 +554,7 @@ function draw(){
     if(who.includes(c[0]))mark=p}
   for(const b of fr.bus||[]){const p=P(b[1],b[2]); g.fillStyle=theme.bus; g.beginPath(); g.roundRect(p[0]-9,p[1]-6,18,12,3); g.fill(); g.fillStyle='#fff'; g.fillText(b[4],p[0],p[1]+3.5)}
   if(mark){g.beginPath(); g.arc(mark[0],mark[1],10,0,7); g.strokeStyle=theme.ink; g.lineWidth=1.5; g.stroke(); g.fillStyle=theme.ink; g.fillText(story.decision.agent,mark[0],mark[1]-14)}
-  const op=(fr.operator||[])[0]; $('clock').textContent=clockText(fr.t,true)+(op?`  ${op[1]?'advisory ':''}${op[2]?'bus priority ':''}${op[3]?'toll $'+op[3]:''}`:'');
+  const op=(fr.operator||[])[0]; $('clock').textContent=clockText(fr.t,true)+(fr.environment?' · '+fr.environment.weather:'')+(op?`  ${op[1]?'advisory ':''}${op[2]?'bus priority ':''}${op[3]?'toll $'+op[3]:''}`:'');
   if(playing&&head<frames.length-1){head=Math.min(frames.length-1,head+ +$('speed').value*0.25); $('scrub').value=Math.floor(head)}
   placeCursors(); requestAnimationFrame(draw);
 }

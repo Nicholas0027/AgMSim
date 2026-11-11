@@ -217,6 +217,17 @@ def compute_metrics(sim) -> dict:
             "price_usd_per_kwh_mean_paid": round(sum(s.revenue for s in stations) / max(1e-9, sum(s.kwh for s in stations)), 4)
             if any(s.kwh for s in stations) else 0.0,
         }
+    if w.pois:
+        by_type: dict = {}
+        for poi in w.pois.values():
+            by_type[poi.type] = by_type.get(poi.type, 0) + poi.visits
+        out["pois"] = {
+            "places": len(w.pois),
+            "visits": sum(p.visits for p in w.pois.values()),
+            "visits_by_type": dict(sorted(by_type.items())),
+            "found_closed": sum(p.found_closed for p in w.pois.values()),     # arrived after the place had closed
+            "visits_gini": gini(p.visits for p in w.pois.values()),          # how unevenly visits are spread over places
+        }
     if w.cabs:
         cabs, kind = list(w.cabs.values()), sim.kinds["ondemand"]
         loaded, empty = sum(c.m_loaded for c in cabs), sum(c.m_empty for c in cabs)

@@ -34,7 +34,8 @@ from .kinds.base import KINDS
 from .llm import build_llm_client
 from .network import build_network
 from .observation import Observation
-from .plans import parse_clock
+from .plans import hhmm, parse_clock
+from .pois import build_pois
 from .policies.base import PolicyContext, create_policy, instantiate
 from .policies.replay import ReplayPolicy
 from .recorder import Recorder
@@ -128,6 +129,7 @@ class Simulation:
         self.streams = RngStreams(cfg.simulation.seed)
         self.world = World(build_network(cfg.network, cfg.base_dir), self.dt)
         self.world.clock0 = parse_clock(cfg.simulation.clock_start)
+        self.world.pois = build_pois(cfg.pois, self.world.net, self.world.clock0)
         self.recorder = recorder if recorder is not None else Recorder(cfg)
         self._policy_overrides = policies or {}
         self._replay = replay
@@ -275,8 +277,18 @@ class Simulation:
             elif kind == "set_agency":
                 schedule.setdefault(at(item["at_seconds"]), []).append(
                     ("agency", item["kind"], item["agency"], item.get("agents")))
-            else:
-                raise ValueError(f"unknown intervention type '{kind}' (use link_condition or set_agency)")
+            elif kind == "weather":                 # slows every road and walking; waiting and walking feel longer
+                schedule.setdefault(at(item["at_seconds"]), []).append(
+                    ("weather", str(item.get("label", "bad weather")), float(item.get("speed_factor", 0.8)),
+                     float(item.get("walk_factor", 0.9)), float(item.get("discomfort", 1.5))))
+                if item.get("until_seconds") is not None:
+                    schedule.setdefault(at(item["until_seconds"]), []).append(("weather", None, 1.0, 1.0, 1.0))
+            elif kind == "poi_closure":             # a place closes at this time today, earlier than it said
+                if item.get("poi") not in self.world.pois:
+                    raise ValueError(f"poi_closure refers to an unknown place '{item.get('poi')}'")
+                schedule.setdefault(at(item["at_seconds"]), []).append(("closure", item["poi"]))
+            elif kind != "demand_surge":            # (a surge is part of the demand: see agmsim.demand)
+                raise ValueError(f"unknown event type '{kind}'")
         return schedule
 
     def _header(self) -> dict:
@@ -291,6 +303,10 @@ class Simulation:
             "network": self.world.net.to_dict(),
             "lines": {k: v["stops"] for k, v in self.world.lines.items()},
             "stations": {s.id: s.node for s in self.world.stations.values()},
+            "pois": [{"id": p.id, "name": p.name, "type": p.type, "node": p.node,
+                      "opens": None if p.open_s is None else hhmm(self.world.clock0 + p.open_s),
+                      "closes": None if p.close_s is None else hhmm(self.world.clock0 + p.close_s)}
+                     for p in self.world.pois.values()],
             "signals": {s.id: {"node": s.node, "names": s.names,
                                "from": [[self.world.net.links[lid].u for lid in ids] for ids in s.phases]}
                         for s in self.world.signals.values()},
@@ -417,11 +433,26 @@ class Simulation:
         return w.tick < self.n_ticks
 
     def _apply_intervention(self, item) -> None:
+        w = self.world
         if item[0] == "links":
             changed = [self.world.net.set_factor(lid, item[2]) for lid in item[1]]
             if any(changed):
                 self.emit("link_condition", links=item[1], factor=item[2])
                 self.conditions_changed()
+        elif item[0] == "weather":
+            _, label, speed, walk, discomfort = item
+            w.net.set_ambient(speed)
+            w.walk_factor = walk
+            w.environment = {} if label is None else {"weather": label, "roads_at_pct_of_normal_speed": round(100 * speed),
+                                                      "waiting_and_walking_feel_longer_by_factor": discomfort}
+            self.emit("weather", label=label, speed_factor=speed)
+            self.conditions_changed()
+        elif item[0] == "closure":
+            poi = w.pois[item[1]]
+            poi.close_s = w.time_s if poi.close_s is None else min(poi.close_s, w.time_s)
+            self.emit("poi_closed", poi=poi.id, at=hhmm(w.clock0 + poi.close_s))
+            if "traveler" in self.kinds:
+                self.kinds["traveler"].place_closed(poi)
         else:
             _, kind, spec, agents = item
             targets = agents or [a for a, s in self.specs.items() if s.kind == kind]
@@ -440,6 +471,8 @@ class Simulation:
         busy = {l.id: round(l.flow, 2) for l in w.net.links if l.flow < 0.95}     # congested: share of free-flow speed
         if busy:
             frame["busy_links"] = busy
+        if w.environment:
+            frame["environment"] = w.environment
         frame["stats"] = self._frame_stats()
         self.recorder.write(frame)
 

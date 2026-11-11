@@ -91,6 +91,8 @@ class Kind:
 
     def obs(self, agent_id, trigger, state, context, actions, default: Decision, aux=None) -> Observation:
         w = self.world
+        if w.environment:                    # e.g. the weather: something every agent can see for itself
+            context = {**context, "environment": dict(w.environment)}
         return Observation(agent_id, self.name, w.tick, w.time_s + w.clock0, trigger, state, context,
                            tuple(actions), default, aux or {})
 

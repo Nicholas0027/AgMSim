@@ -22,6 +22,7 @@ from typing import Any, Optional, get_type_hints
 
 import yaml
 
+EVENT_TYPES = ("link_condition", "set_agency", "weather", "demand_surge", "poi_closure")
 MACHINE_KINDS = ("vehicle", "bus", "evcs", "operator", "signal", "ondemand")
 KIND_ORDER = ("operator", "signal", "evcs", "traveler", "bus", "vehicle", "ondemand")   # order in which actions are applied
 
@@ -63,6 +64,8 @@ class DemandCfg:
     params: dict = field(default_factory=dict)
     plan: list = field(default_factory=list)   # day-plan template (see agmsim.plans.build_plan); empty: one trip each
     plan_time_factor: float = 1.2       # planned arrivals assume this multiple of the free-flow driving time
+    to_pois: bool = False               # a trip goes to a point of interest that fits its purpose (see ``pois``)
+    poi_scale_m: Optional[float] = None  # how fast a place's pull falls with distance (default: 40% of the network's span)
 
 
 # --------------------------------------------------------------------------- agents
@@ -313,7 +316,8 @@ class Config:
     record: RecordCfg = field(default_factory=RecordCfg)
     metrics: MetricsCfg = field(default_factory=MetricsCfg)
     scoring: ScoringCfg = field(default_factory=ScoringCfg)
-    interventions: list = field(default_factory=list)
+    interventions: list = field(default_factory=list)   # external events; ``events`` is accepted as another name
+    pois: list = field(default_factory=list)            # points of interest (see agmsim.pois)
     plugins: list = field(default_factory=list)
     base_dir: Optional[str] = field(default=None, repr=False, compare=False)
 
@@ -395,6 +399,12 @@ class Config:
         _choice("agents.traveler.default_mode", self.agents.traveler.default_mode, ("car", "bus", "walk", "ride"))
         _choice("agents.ondemand.objective", self.agents.ondemand.objective, ("profit", "service", "balanced"))
         _choice("agents.vehicle.link_conditions", self.agents.vehicle.link_conditions, ("none", "local", "global"))
+        for item in self.interventions:
+            if not isinstance(item, dict) or item.get("type") not in EVENT_TYPES:
+                raise ConfigError(f"each external event needs a 'type' out of {list(EVENT_TYPES)}")
+        for item in self.pois:
+            if not isinstance(item, dict) or "type" not in item or ("node" not in item and "count" not in item):
+                raise ConfigError("each entry of 'pois' needs a 'type' and either a 'node' or a 'count'")
         if self.demand.plan and (len(self.demand.plan) < 2 or any("type" not in item for item in self.demand.plan)):
             raise ConfigError("demand.plan needs at least two activities, each with a 'type'")
         if self.scoring.performing <= self.scoring.traveling or self.scoring.money <= 0:
@@ -435,6 +445,8 @@ def _expand_aliases(data: dict) -> dict:
         agents["vehicle"] = {**machine, **agents["vehicle"]}
     if agents:
         data["agents"] = agents
+    if "events" in data:                    # the scenario's external events, under their other name (it wins)
+        data["interventions"] = data.pop("events") or []
     return data
 
 

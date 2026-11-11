@@ -1,0 +1,43 @@
+# Places and external events. A town with named places -- offices, shops, schools, a clinic, a stadium --
+# to which trips go according to their purpose. Half the travellers own a car, there is a bus line and a
+# fleet of on-demand cars. During the run it starts to rain (roads and walking slower, waiting and walking
+# feel longer), a match ends at the stadium (a surge of trips from there) and a road is blocked. Try:
+#   agmsim run town_places
+#   agmsim run town_places --set events=[]                       # the same town on a quiet day
+#   agmsim run town_places --set agents.traveler.agency=L0       # everybody travels the way they always do
+name: town_places
+description: 6x6 town with named places; rain, a match ending at the stadium and a blocked road during the run.
+simulation: {time_step_seconds: 2, duration_seconds: 5400, seed: 2, clock_start: "17:00"}
+network:
+  type: grid
+  rows: 6
+  cols: 6
+  block_m: 350
+  speed_mps: 11
+  capacity_scale: 0.25
+pois:
+  - {type: work, count: 6}
+  - {type: shop, count: 4, closes: "18:30"}
+  - {type: school, count: 2}
+  - {type: medical, count: 1, closes: "18:00"}
+  - {id: stadium, type: leisure, node: 21, name: Stadium, weight: 3}
+  - {type: leisure, count: 2}
+demand:
+  pattern: uniform
+  end_seconds: 3600
+  min_trip_m: 900
+  to_pois: true
+events:
+  - {type: weather, label: heavy rain, at_seconds: 1200, until_seconds: 3600, speed_factor: 0.75, walk_factor: 0.85,
+     discomfort: 1.8}
+  - {type: demand_surge, poi: stadium, at_seconds: 1800, until_seconds: 2700, trips: 120}
+  - {type: link_condition, at_seconds: 2100, until_seconds: 3900, factor: 0.1, links: [[14, 15], [15, 21]]}
+agents:
+  traveler: {count: 320, car_ownership: 0.5, default_mode: car, non_llm_policy: utility, agency: L4,
+             wait_check_seconds: 120}
+  vehicle: {non_llm_policy: algorithm, agency: L1}
+  ondemand: {fleet: 30, non_llm_policy: algorithm, agency: L1}
+  bus:
+    non_llm_policy: rule
+    agency: L0
+    lines: [{id: A, stops: [6, 8, 10, 22, 34, 32, 30, 18], buses: 4, capacity: 40}]

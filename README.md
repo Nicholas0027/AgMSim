@@ -98,8 +98,8 @@ agents were asked and decided (`decisions`, `llm`), follow them.
 | - | - | - |
 | **Physical infrastructure** | road network (grid, two banks with bridges, or from a file) | done |
 | | charging stations | done |
-| | external events (incidents on links; a change of agency during the run; a venue emptying) | partly: no weather or demand shocks yet |
-| | destinations as points of interest | not yet: activities take place at network nodes |
+| | external events (a road blocked or slowed; weather; a surge of trips from or to a place; a place closing early; a change of agency during the run) | done; not yet: outages of charging stations or bus lines |
+| | destinations as points of interest | done: named places with a type and opening hours; trips go to a place that fits their purpose, and activities of a day plan can take place at one |
 | **Entity agents** | traveller, private car (agentic vehicle), bus, charging station | done |
 | | traffic lights | done: fixed-time, deciding by their own queues, or cooperating with the orchestrator |
 | | orchestrator | done as the kind `operator`: it sees the slowest roads and what waited at the lights, publishes advisories to cars, gives buses priority (also through red lights), sets a cordon charge, and asks the lights to favour a direction or to serve a queue. It does not address single cars or buses |
@@ -249,6 +249,40 @@ Results are means with 95% confidence half-widths over seeds; `--out DIR` writes
 Mixed populations are set with `mix`, e.g. 30% of vehicles at level 1 and the rest at the base level:
 `agents: {vehicle: {agency: L0, mix: [{share: 0.3, agency: L1}]}}`.
 
+### Places and external events
+
+Two parts of the physical setting are given in a scenario next to the network: the **places** people go
+to, and the **events** that happen to the town during the run.
+
+```yaml
+pois:                                    # points of interest; the same for every seed
+  - {type: work, count: 6}               # six offices, put down at free nodes
+  - {type: shop, count: 4, closes: "18:30"}
+  - {id: stadium, type: leisure, node: 21, name: Stadium, weight: 3}
+demand: {pattern: uniform, to_pois: true}   # a trip goes to a place that fits its purpose
+events:                                  # (the list is also accepted under its older name, interventions)
+  - {type: weather, label: heavy rain, at_seconds: 1200, until_seconds: 3600, speed_factor: 0.75,
+     walk_factor: 0.85, discomfort: 1.8}
+  - {type: demand_surge, poi: stadium, at_seconds: 1800, until_seconds: 2700, trips: 120}
+  - {type: link_condition, at_seconds: 2100, until_seconds: 3900, factor: 0.1, links: [[14, 15], [15, 21]]}
+  - {type: poi_closure, poi: shop2, at_seconds: 2400}
+```
+
+- **Places** (`agmsim/pois.py`). With `demand.to_pois` a commute goes to a `work` place, an errand to a
+  `shop`, and so on; nearer and weightier places are likelier. An activity of a day plan can be put at a
+  place (`at: {poi: shop}`: the one that adds the least detour) and then has its opening hours. A traveller
+  is told the name and type of the place they are heading for; `pois.visits`, `pois.found_closed` and the
+  map show what happened there.
+- **Weather** slows every road and walking, and tells every agent so in its observation
+  (`context.environment`); the built-in choice model weighs waiting and walking more heavily while it lasts.
+- **A surge** adds trips that all start from (or head to) one place within a period: a match ending.
+- **A road blocked or slowed**, as before. Who knows about it depends on the vehicles' and the
+  orchestrator's agency.
+- **A place closing early** ends what people planned to do there at that time; those who may adapt their
+  day plan are told and review it.
+
+`agmsim run town_places` has the first three; the `places` experiment runs them one at a time and together.
+
 ### Day plans (MATSim's action mechanism, with decisions inside the day)
 
 By default every traveller has one trip. With `demand.plan` every traveller has a **day plan** — a chain
@@ -302,7 +336,8 @@ where it can matter (an incident, a toll, a bottleneck with a bus lane, scarce c
 
 The `signals` experiment asks whether traffic lights need agency of their own or an orchestrator, on
 `agmsim run city_signals`; the `ondemand` experiment asks what on-demand cars that re-route, turn requests
-down or move while free do to waiting and to the fleet, on `agmsim run city_ondemand`. Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
+down or move while free do to waiting and to the fleet, on `agmsim run city_ondemand`; the `places`
+experiment asks whether rain, a match ending and a blocked road add up, on `agmsim run town_places`. Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
 (`llm_alignment`, `llm_persuasion`) need a language model: `--llm qwen-local` (default), `--llm deepseek`,
 or both to compare them as arms; `--answer choice explain reason` adds the answer formats as arms.
 

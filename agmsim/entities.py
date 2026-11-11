@@ -77,6 +77,21 @@ class Persona:
 
 
 @dataclass
+class Poi:
+    """A point of interest: a named place of some type at a node, possibly with opening hours."""
+
+    id: str
+    type: str
+    node: int
+    name: str = ""
+    weight: float = 1.0                       # how strongly it attracts trips
+    open_s: Optional[float] = None            # seconds into the run; None: always open
+    close_s: Optional[float] = None
+    visits: int = 0
+    found_closed: int = 0                     # visitors who arrived after it had closed
+
+
+@dataclass
 class Traveler:
     id: str
     persona: Persona
@@ -102,6 +117,7 @@ class Traveler:
     paid: float = 0.0
     plan: Optional[object] = None             # day plan (agmsim.plans.Plan); None: a single trip
     ride: Optional[str] = None                # the ride request this traveller has open, if any
+    poi: Optional[str] = None                 # the point of interest a single trip goes to, if any
 
 
 @dataclass

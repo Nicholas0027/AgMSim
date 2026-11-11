@@ -91,7 +91,7 @@ class TravelerKind(Kind):
 
     def setup(self):
         sim, w = self.sim, self.world
-        w.travelers = generate_travelers(sim.cfg, w.net, sim.streams.get("demand"), w.dt, w.clock0)
+        w.travelers = generate_travelers(sim.cfg, w.net, sim.streams.get("demand"), w.dt, w.clock0, w.pois)
         self._needs: dict[int, list] = {}
         self._planners = [tr for tr in w.travelers.values() if tr.plan is not None]
         self.horizon_s = sim.n_ticks * w.dt
@@ -152,7 +152,12 @@ class TravelerKind(Kind):
 
     def trip_done(self, tr, now: int) -> None:
         """A trip has ended. For a person with a day plan it was one leg: the next activity starts."""
-        p = tr.plan
+        w, p = self.world, tr.plan
+        at = tr.poi if p is None else p.activities[p.leg["to"]].poi if p.leg is not None else None
+        if at is not None:                  # the trip went to a point of interest
+            poi = w.pois[at]
+            poi.visits += 1
+            poi.found_closed += int(poi.close_s is not None and now * w.dt >= poi.close_s)
         if p is None or p.leg is None:
             return
         leg, p.leg = p.leg, None
@@ -224,16 +229,32 @@ class TravelerKind(Kind):
         if not follow_up and abs(drift) < cfg.plan_review_threshold_seconds:
             return False
         if follow_up:
-            reason = "you have just changed your plan and may adjust it further"
+            reason, p.notice = p.notice or "you have just changed your plan and may adjust it further", ""
         else:
             reason = (f"as traffic stands now you would reach '{p.activities[k].type}' about "
                       f"{abs(drift) / 60.0:.0f} min {'later' if drift > 0 else 'earlier'} than you reckoned")
         p.pending = self._review(tr, leave, estimate, projected, reason)
         return True
 
+    def place_closed(self, poi) -> None:
+        """A place closes earlier than it said: what people planned to do there ends then, and those who may
+        adapt their plan take a look at it."""
+        w = self.world
+        for tr in self._planners:
+            p = tr.plan
+            for k in [p.at, *p.ahead()]:
+                a = p.activities[k]
+                if a.poi == poi.id and a.left_s is None:
+                    a.close_s = poi.close_s
+                    if self.allows(tr.id, "adapt_plan"):
+                        p.follow_up = True
+                        p.notice = f"'{a.type}' at {poi.name} closes at {hhmm(w.clock0 + poi.close_s)} today, earlier than planned"
+
     def _plan_row(self, a, k: int) -> dict:
         c0 = self.world.clock0
         row = {"activity": k, "type": a.type, "typical_min": minutes(a.typical_s)}
+        if a.poi is not None:
+            row["place"] = self.world.pois[a.poi].name
         if a.priority != 1.0:
             row["priority"] = a.priority
         if a.outside_s > 0:
@@ -349,7 +370,7 @@ class TravelerKind(Kind):
                              "price_usd": quote["fare"]})
                 detail["ride"] = {"time_s": quote["wait_s"] + quote["ride_s"], "quote": quote}
         if self.cfg.walk and not p.mobility_limited and tr.trip_m <= p.max_walk_m:
-            walk_s = tr.trip_m / p.walk_speed
+            walk_s = tr.trip_m / (p.walk_speed * self.world.walk_factor)
             rows.append({"option": "walk", "wait_min": 0.0, "travel_min": minutes(walk_s), "price_usd": 0.0})
             detail["walk"] = {"time_s": walk_s}
         return rows, detail
@@ -362,11 +383,18 @@ class TravelerKind(Kind):
         if trigger == "plan_review":
             return state
         state["trip"] = {"origin_node": tr.origin, "destination_node": tr.destination, "distance_km": km(tr.trip_m)}
+        at = tr.poi
         if tr.plan is not None and tr.plan.leg is not None:
             goal = tr.plan.activities[tr.plan.leg["to"]]
+            at = goal.poi
             state["trip"]["to_activity"] = goal.type
             if goal.latest_start_s is not None:
                 state["trip"]["must_start_by"] = hhmm(w.clock0 + goal.latest_start_s)
+        if at is not None:                  # where they are going is a place with a name and, perhaps, hours
+            poi = w.pois[at]
+            state["trip"]["destination_place"] = {"name": poi.name, "type": poi.type}
+            if poi.close_s is not None:
+                state["trip"]["destination_place"]["closes"] = hhmm(w.clock0 + poi.close_s)
         state["minutes_since_need"] = minutes((w.tick - tr.t_need) * w.dt)
         return state
 

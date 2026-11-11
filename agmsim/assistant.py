@@ -43,13 +43,23 @@ agents.signal.junctions ("all", or a list of node numbers; an empty list means n
 agents.operator.review_seconds (number): how often the orchestrator (the kind named operator) reviews the network
 agents.operator.initial_toll (USD), agents.operator.initial_bus_priority (true | false), agents.operator.initial_advisory (true | false)
 demand.start_seconds, demand.end_seconds (seconds from the start of the run): the period in which trips begin
-interventions (a list that replaces the scenario's own): each entry is
-  {"type": "link_condition", "at_seconds": <start>, "until_seconds": <end>, "factor": <speed multiplier such as 0.1>, "links": [[<node>, <node>], ...]} or
+demand.to_pois (true | false): trips go to a named place that fits their purpose (needs places in the scenario)
+interventions (the external events; a list that replaces the scenario's own): each entry is one of
+  {"type": "link_condition", "at_seconds": <start>, "until_seconds": <end>, "factor": <speed multiplier such as 0.1>, "links": [[<node>, <node>], ...]}  (a road blocked or slowed)
+  {"type": "weather", "label": "<e.g. heavy rain>", "at_seconds": <start>, "until_seconds": <end>, "speed_factor": <e.g. 0.75>, "walk_factor": <e.g. 0.85>, "discomfort": <e.g. 1.8>}
+  {"type": "demand_surge", "at_seconds": <start>, "until_seconds": <end>, "trips": <how many>, "poi": "<id of a place>" (or "node": <node>), "direction": "from" | "to"}
+  {"type": "poi_closure", "poi": "<id of a place>", "at_seconds": <when it closes today>}
   {"type": "set_agency", "at_seconds": <when>, "kind": "<kind>", "agency": "<level>"}"""
 
 ANSWER = ('{"reply": "<one or two sentences for the researcher: what you set, and anything you could not do>", '
           '"scenario": "<a scenario name, or null to keep the current one>", '
           '"set": {"<key>": <value>, ...}, "run": <true only if they asked to start the run>}')
+
+
+def _place_ids(cfg) -> set:
+    """Ids of the scenario's points of interest, without building them."""
+    return {str(p["id"]) for p in cfg.pois if "id" in p} | {
+        f"{p['type']}{k + 1}" for p in cfg.pois if "count" in p for k in range(int(p["count"]))}
 
 
 def system_prompt() -> str:
@@ -75,7 +85,8 @@ def system_prompt() -> str:
         cfg = Config.load(name)
         lines.append(f"- {name}: {cfg.description} Kinds: {', '.join(cfg.active_kinds())}. clock_start {cfg.simulation.clock_start}, "
                      f"duration {cfg.simulation.duration_seconds:g} s, {cfg.agents.traveler.count} travellers. "
-                     f"Its interventions: {json.dumps(cfg.interventions)}")
+                     f"Its interventions: {json.dumps(cfg.interventions)}"
+                     + (f" Its places: {', '.join(sorted(_place_ids(cfg)))}." if cfg.pois else ""))
     lines += ["", "Kinds of agent, their built-in decision models, and what each agency level adds"]
     for name in KINDS.names():
         kind = KINDS.get(name)
@@ -175,17 +186,31 @@ def check(scenario: str, settings: dict) -> Optional[str]:
         if kcfg.non_llm_policy not in models:
             return f"agents.{name}.non_llm_policy must be one of {models}"
     net = build_network(cfg.network, cfg.base_dir)
-    for item in cfg.interventions:
-        if not isinstance(item, dict) or item.get("type") not in ("link_condition", "set_agency"):
-            return "each intervention needs \"type\": \"link_condition\" or \"set_agency\""
-        if item["type"] == "link_condition":
-            if not all(k in item for k in ("at_seconds", "factor", "links")):
-                return "a link_condition intervention needs at_seconds, factor and links"
+    places = _place_ids(cfg)
+    for item in cfg.interventions:              # (their types were checked when the configuration was loaded)
+        kind = item["type"]
+        if "at_seconds" not in item:
+            return f"a {kind} event needs at_seconds"
+        if kind == "link_condition":
+            if not all(k in item for k in ("factor", "links")):
+                return "a link_condition event needs at_seconds, factor and links"
             for pair in item["links"]:
                 if len(pair) != 2 or net.link_between(int(pair[0]), int(pair[1])) is None:
                     return f"there is no road between nodes {pair}"
-        elif item.get("kind") not in active or "agency" not in item or "at_seconds" not in item:
-            return "a set_agency intervention needs at_seconds, a kind the scenario has, and agency"
+        elif kind == "set_agency":
+            if item.get("kind") not in active or "agency" not in item:
+                return "a set_agency event needs at_seconds, a kind the scenario has, and agency"
+        elif kind == "demand_surge":
+            if "trips" not in item or ("poi" not in item and "node" not in item):
+                return "a demand_surge event needs at_seconds, trips and a poi or a node"
+            if "node" in item and int(item["node"]) not in net.nodes:
+                return f"there is no node {item['node']}"
+        if kind in ("demand_surge", "poi_closure") and "poi" in item and item["poi"] not in places:
+            return f"there is no place '{item['poi']}'; places: {', '.join(sorted(places)) or 'none in this scenario'}"
+        if kind == "poi_closure" and "poi" not in item:
+            return "a poi_closure event needs at_seconds and poi"
+    if cfg.demand.to_pois and not cfg.pois:
+        return "demand.to_pois needs places, and this scenario has none"
     return None
 
 

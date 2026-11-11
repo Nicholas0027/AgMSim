@@ -1013,3 +1013,86 @@ def test_on_demand_cars_carry_travellers_who_call_them(tmp_path):
     assert lit.metrics["signals"]["crossings"] > 0 and lit.metrics["outcomes"]["wait_time_s_mean"] > base.metrics["outcomes"]["wait_time_s_mean"]
     mixed_sim, mixed = run("city_multimodal", ["agents.ondemand.fleet=15"])                     # next to private cars, buses, charging
     assert mixed.metrics["ondemand"]["rides"] > 0 and {"car", "bus", "ride"} <= set(mixed.metrics["travelers"]["mode_share"])
+
+
+# ---------------------------------------------------------------- places (POIs) and external events
+
+
+def test_trips_go_to_places_that_fit_their_purpose_and_events_change_the_day():
+    from agmsim.pois import PURPOSE_PLACE
+
+    sim, day = run("town_places")
+    w = sim.world
+    other, _ = run("town_places", ["simulation.seed=9"])
+    assert {p.id: p.node for p in w.pois.values()} == {p.id: p.node for p in other.world.pois.values()}     # places do not move with the seed
+    assert len({p.node for p in w.pois.values()}) == len(w.pois) == 16 and w.pois["stadium"].node == 21
+    kinds = {p.id: p.type for p in w.pois.values()}
+    regular = [t for t in w.travelers.values() if t.poi]
+    surge = [t for t in w.travelers.values() if not t.poi and t.origin == 21 and 1800 <= t.t_need * sim.dt < 2700]
+    assert all(PURPOSE_PLACE[t.persona.purpose] == kinds[t.poi] and t.destination == w.pois[t.poi].node for t in regular)
+    assert len(w.travelers) == 440 and len(regular) >= 315 and len(surge) >= 120       # (a trip from the only clinic keeps its node)
+    places = day.metrics["pois"]
+    assert places["visits"] == sum(t.state == TState.ARRIVED for t in regular) == sum(places["visits_by_type"].values())
+    assert places["found_closed"] == sum(p.found_closed for p in w.pois.values()) > 0                       # the shops shut at 18:30
+
+    events = sim.cfg.interventions
+    only = lambda kind: ["events=" + json.dumps([e for e in events if e["type"] == kind])]              # noqa: E731
+    _, quiet = run("town_places", ["events=[]"])
+    _, rain = run("town_places", only("weather"))
+    walk = lambda r: r.metrics["travelers"]["mode_share"].get("walk", 0.0)                             # noqa: E731
+    wait = lambda r: r.metrics["outcomes"]["wait_time_s_mean"]                                         # noqa: E731
+    assert quiet.metrics["travelers"]["trips"] == 320 and day.metrics["travelers"]["trips"] == 440
+    assert walk(rain) < walk(quiet) and rain.metrics["outcomes"]["traffic_speed_mph"] < quiet.metrics["outcomes"]["traffic_speed_mph"]
+    assert wait(day) > wait(rain) > wait(quiet)
+
+    # everybody sees the weather while it lasts, and a traveller sees the place they are going to
+    seen = []
+    run("town_places", only("weather"), policies={"traveler": lambda obs: seen.append(obs) or obs.default})
+    wet = [o for o in seen if "environment" in o.context]
+    assert wet and all(o.context["environment"]["weather"] == "heavy rain" and 1200 <= o.tick * 2 < 3600 for o in wet)
+    assert any("environment" not in o.context for o in seen)
+    place = next(o for o in seen if o.trigger == "need").state["trip"]["destination_place"]
+    assert set(place) >= {"name", "type"}
+    header = next(r for r in day.records if r["type"] == "header")
+    assert len(header["pois"]) == 16 and {"id", "name", "type", "node", "closes"} <= set(header["pois"][0])
+    frames = [r for r in day.records if r["type"] == "frame"]
+    assert any("environment" in f for f in frames) and "environment" not in frames[0]
+    _, again = run("town_places")
+    assert again.state_digest == day.state_digest
+    with pytest.raises(ConfigError, match="external event"):
+        Config.from_dict({"events": [{"type": "earthquake", "at_seconds": 0}]})
+    with pytest.raises(ConfigError, match="pois"):
+        Config.from_dict({"pois": [{"type": "shop"}]})
+
+
+def test_a_place_that_closes_early_makes_people_look_at_their_plan():
+    scenario = {
+        "simulation": {"time_step_seconds": 2, "duration_seconds": 7200, "seed": 4, "clock_start": "16:00"},
+        "network": {"type": "grid", "rows": 4, "cols": 4, "block_m": 400, "speed_mps": 10, "capacity_scale": 0.5},
+        "pois": [{"id": "market", "type": "shop", "node": 5, "name": "Market", "closes": "18:30"}],
+        "demand": {"pattern": "uniform", "start_seconds": 1800, "end_seconds": 3000, "min_trip_m": 800,
+                   "plan": [{"type": "work", "typical_min": 480},
+                            {"type": "errand", "at": {"poi": "shop"}, "duration_min": 20, "optional": True, "priority": 2},
+                            {"type": "home", "typical_min": 720}]},
+        "events": [{"type": "poi_closure", "poi": "market", "at_seconds": 2400}],            # the market shuts at 16:40 today
+        "agents": {"traveler": {"count": 60, "car_ownership": 1.0, "non_llm_policy": "utility", "agency": ["adapt_plan"],
+                                "walk": False},
+                   "vehicle": {"agency": "L0"}},
+    }
+    sim, adapted = run(scenario)
+    plans = [t.plan for t in sim.world.travelers.values()]
+    assert all(p.activities[1].poi == "market" and p.activities[1].node == 5 for p in plans)        # the errand is at the market
+    assert sim.world.pois["market"].close_s == 2400 and sim.event_counts["poi_closed"] == 1
+    late = [p for p in plans if p.activities[0].end_s > 2400]                                       # had not left work yet
+    assert late and all(p.activities[1].close_s == 2400 for p in late)
+    assert adapted.metrics["plans"]["reviews"] >= len(late) and adapted.metrics["plans"]["activities_skipped"] > 0
+    seen = []
+    run(scenario, policies={"traveler": lambda obs: seen.append(obs) or obs.default})
+    told = [o for o in seen if o.trigger == "plan_review" and "closes at 16:40 today" in o.context["reason"]]
+    at_work = next(o for o in told if o.context["now_at"]["type"] == "work")                        # still to go there
+    assert at_work.context["plan"][0]["place"] == "Market" and at_work.context["plan"][0]["closes"] == "16:40"
+    assert at_work.has("skip_activity")
+    _, followed = run(scenario, ["agents.traveler.agency=L0"])                                      # nobody may change the plan
+    assert followed.metrics["plans"]["reviews"] == 0 and followed.metrics["plans"]["activities_skipped"] == 0
+    assert followed.metrics["pois"]["found_closed"] > adapted.metrics["pois"]["found_closed"]
+    assert adapted.metrics["plans"]["score_usd_mean"] > followed.metrics["plans"]["score_usd_mean"]

@@ -13,6 +13,7 @@ import random
 from .entities import Persona, Traveler
 from .network import RoadNetwork
 from .plans import build_plan
+from .pois import choose_for_purpose
 from .registry import Registry
 from .rng import lognormal, weighted_choice
 
@@ -207,19 +208,48 @@ def _persona(rng: random.Random, p) -> Persona:
     return Persona(age, purpose, vot, patience, p.walk_speed_mps, p.max_walk_m, limited)
 
 
-def generate_travelers(cfg, net: RoadNetwork, rng: random.Random, dt: float, clock0: float = 0.0) -> dict[str, Traveler]:
+def _surge(event: dict, cfg, net: RoadNetwork, rng: random.Random, pois: dict) -> list:
+    """The extra trips of a ``demand_surge`` event: they all start from (or head to) one place within its period.
+
+    ``{type: demand_surge, at_seconds, until_seconds, trips, poi | node, direction: from | to}``
+    """
+    place = pois[event["poi"]].node if "poi" in event else int(event["node"])
+    start = float(event["at_seconds"])
+    end = float(event.get("until_seconds") or start + 600.0)
+    nodes = sorted(net.nodes)
+    trips = []
+    for _ in range(int(event["trips"])):
+        other = _other_node(rng, net, nodes, place, cfg.demand.min_trip_m)
+        od = (other, place) if event.get("direction", "from") == "to" else (place, other)
+        trips.append((start + rng.random() * (end - start), *od, "surge"))
+    return trips
+
+
+def generate_travelers(cfg, net: RoadNetwork, rng: random.Random, dt: float, clock0: float = 0.0,
+                       pois: "dict | None" = None) -> dict[str, Traveler]:
     """Create the traveller population, ordered by need time: one trip need each, or a day plan each.
 
     With ``demand.plan`` the demand pattern supplies where the first and the last activity are and
     when the first one ends; the template supplies the rest (see :func:`agmsim.plans.build_plan`).
+    With ``demand.to_pois`` a trip's destination is a point of interest that fits its purpose.
+    ``demand_surge`` events add their trips to those of the demand pattern.
     """
     n = int(cfg.agents.traveler.count)
+    pois = pois or {}
     trips = DEMANDS.get(cfg.demand.pattern)(cfg, net, rng, n)
+    for event in cfg.interventions:
+        if event.get("type") == "demand_surge":
+            trips = list(trips) + _surge(event, cfg, net, rng, pois)
     trips = sorted(trips, key=lambda trip: (trip[0], trip[1], trip[2]))
-    width = max(3, len(str(n)))
+    width = max(3, len(str(len(trips))))
+    span = max(net.euclid(a, b) for a in (min(net.nodes), max(net.nodes)) for b in net.nodes) or 1.0
+    scale = cfg.demand.poi_scale_m or 0.4 * span
     travelers: dict[str, Traveler] = {}
-    for i, (t, origin, destination) in enumerate(trips):
+    for i, (t, origin, destination, *tag) in enumerate(trips):
         persona = _persona(rng, cfg.agents.traveler.personas)
+        place = choose_for_purpose(pois, persona.purpose, origin, net, rng, scale) if cfg.demand.to_pois and not tag else None
+        if place is not None:
+            destination = place.node
         route = net.route(origin, destination)
         tid = f"H{i + 1:0{width}d}"
         travelers[tid] = Traveler(
@@ -230,8 +260,9 @@ def generate_travelers(cfg, net: RoadNetwork, rng: random.Random, dt: float, clo
             t_need=int(t // dt),
             trip_m=route.length,
             trip_s=route.time,
+            poi=place.id if place is not None else None,
         )
         if cfg.demand.plan:
             travelers[tid].plan = build_plan(cfg.demand.plan, net, rng, t, origin, destination, clock0,
-                                             cfg.simulation.duration_seconds, cfg.demand.plan_time_factor)
+                                             cfg.simulation.duration_seconds, cfg.demand.plan_time_factor, pois)
     return travelers

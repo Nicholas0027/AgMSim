@@ -25,6 +25,9 @@ class World:
         self.signals: dict[str, Signal] = {}
         self.cabs: dict[str, Cab] = {}                   # on-demand cars
         self.requests: dict[str, RideRequest] = {}       # ride requests, open and past
+        self.pois: dict = {}                             # points of interest, by id
+        self.environment: dict = {}                      # what holds everywhere right now (weather); shown to every agent
+        self.walk_factor = 1.0                           # walking speed multiplier (weather)
         self.operator: Optional[OperatorState] = None
         self.cordon: frozenset = frozenset()             # link ids inside the operator's charging cordon
         self.stop_departures: dict[tuple[str, int], int] = {}   # (line, stop index) -> tick of the last departure
@@ -148,5 +151,8 @@ class World:
             parts += ([(c.id, c.node, c.link, round(c.offset, 4), c.state.value, c.request, c.proposal, tuple(c.path),
                         c.queued, c.go) for c in self.cabs.values()],
                       [(r.id, r.state, r.car, r.offered, tuple(sorted(r.declined_by))) for r in self.requests.values()])
+        if self.pois or self.environment or self.net.ambient != 1.0:
+            parts += ((self.net.ambient, self.walk_factor, tuple(sorted(self.environment.items())),
+                       tuple((p.id, p.close_s, p.visits) for p in self.pois.values())),)
         blob = repr(parts)
         return hashlib.sha256(blob.encode()).hexdigest()[:20]
