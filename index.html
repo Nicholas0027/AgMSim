@@ -403,7 +403,7 @@ function renderCharts(){
   const Y=frac=>CH.T+CH.H*(1-frac);
   // 0. external events as bars on the shared time axis, one row each
   const events=(header.config.interventions||[]).filter(e=>e.at_seconds!==undefined), place=id=>((header.pois||[]).find(q=>q.id===id)||{name:id}).name;
-  $('evwrap').style.display=events.length?'block':'none';
+  $('evwrap').style.display=events.length?'block':'none'; $('ev').textContent='';
   if(events.length){const host=$('ev'); host.textContent=''; const rows=events.length, esvg=svgEl('svg',{class:'ts',width:W,height:rows*15+2,viewBox:`0 0 ${W} ${rows*15+2}`,role:'img'}); host.append(esvg);
     events.forEach((e,i)=>{const from=e.at_seconds, to=e.until_seconds===undefined||e.until_seconds===null?null:e.until_seconds, y=i*15+9;
       const name=e.type==='weather'?(e.label||'bad weather'):e.type==='link_condition'?'road blocked or slowed':e.type==='demand_surge'?`${e.trips} extra trips ${e.direction==='to'?'to':'from'} ${e.poi?place(e.poi):'node '+e.node}`:e.type==='poi_closure'?`${place(e.poi)} closes early`:`${e.kind} becomes ${e.agency}`;
