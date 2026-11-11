@@ -21,7 +21,8 @@ This is an early prototype. See [Limitations](#limitations).
 **Try it without installing anything:** <https://nicholas0027.github.io/AgMSim/> is the web interface with
 the simulator running inside your browser. Pick a scenario (for example `evening_plans`), set the decision
 model and agency level of each kind of agent, press Run, and click any decision to see what the agent saw.
-The online demo offers the built-in decision models; connecting a language model needs a local install.
+To let a language model decide, choose `LLM` for a kind of agent and type your own API key (for example a
+DeepSeek key): the key stays in your browser tab and the calls go straight from your browser to the provider.
 
 ## Install and run
 
@@ -44,13 +45,16 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 `run` prints outcome metrics and writes `runs/<name>/` (config, trace, metrics). `serve` opens a local web
-interface (http://127.0.0.1:8765) to choose a scenario, flip the LLM switch and agency level of each kind,
-watch the run and inspect any decision. Other commands: `agmsim list`, `agmsim matrix`, `agmsim replay`,
+interface (http://127.0.0.1:8765) to choose a scenario, pick for each kind of agent who decides (a built-in
+model or an LLM) and its agency level, watch the run and inspect any decision. Other commands: `agmsim list`, `agmsim matrix`, `agmsim replay`,
 `agmsim explain`.
 
 The online demo is that same page as a static site: `.venv/bin/python online/build.py` writes
 `online/site/`, in which Pyodide runs the `agmsim` package in the visitor's browser (see
-`agmsim/browser.py`). Any static host can serve it; nothing is sent to a server. `sh online/publish.sh` rebuilds it and
+`agmsim/browser.py`). Any static host can serve it; nothing is sent to a server. A visitor who chooses an
+LLM types their own key into the page; it is kept in that tab's memory only, never becomes part of a
+configuration or trace, and the browser itself calls the provider (which must accept requests from web
+pages; DeepSeek's API does). `sh online/publish.sh` rebuilds it and
 pushes it to the `gh-pages` branch, which GitHub Pages serves.
 
 ## The five built-in kinds of agent

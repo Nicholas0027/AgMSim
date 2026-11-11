@@ -12,7 +12,7 @@
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:baseline}
 header h1{font-size:16px;margin:0}header span{color:var(--muted)}
-main{display:grid;grid-template-columns:310px minmax(360px,1fr) 380px;gap:12px;padding:12px;height:calc(100vh - 44px)}
+main{display:grid;grid-template-columns:340px minmax(360px,1fr) 380px;gap:12px;padding:12px;height:calc(100vh - 44px)}
 section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;min-height:0}
 h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:14px 0 6px}h2:first-child{margin-top:0}
 label{display:block;color:var(--muted);margin:6px 0 2px}
@@ -30,6 +30,8 @@ th{color:var(--muted);font-weight:500}td.num{text-align:right;font-variant-numer
 #log b{font-weight:600}#log .f{color:var(--muted)}#log .x{color:var(--accent)}
 pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:260px;overflow:auto;font-size:11.5px}
 .note{color:var(--muted);font-size:12px}
+.fb{margin-top:3px;color:var(--muted);font-size:11.5px}.fb select{width:auto;padding:2px 4px}
+h2 .plain{text-transform:none;letter-spacing:0}#llmsec{display:none}#llmnote{margin-top:6px}input[type=password]{width:100%}
 @media (max-width:1100px){main{grid-template-columns:1fr;height:auto}canvas{height:420px;flex:none}}
 </style>
 </head>
@@ -42,12 +44,18 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px s
   <div class="row"><div><label>Seed</label><input id="seed" type="number"></div>
     <div><label>Travellers</label><input id="count" type="number" min="1"></div></div>
   <h2>Agents</h2>
-  <table id="agents"><thead><tr><th>Kind</th><th>LLM</th><th>Non-LLM policy</th><th>Agency</th></tr></thead><tbody></tbody></table>
+  <table id="agents"><thead><tr><th>Kind</th><th>Decided by</th><th>Agency</th></tr></thead><tbody></tbody></table>
+  <div class="note">Every kind of agent is decided by one model: a built-in one, or a language model (LLM). Agency sets what it is allowed to decide.</div>
   <div class="note" id="levelnote"></div>
-  <h2>LLM backend (used where LLM is ticked)</h2>
-  <select id="backend"></select><div class="note" id="llmnote"></div>
-  <div id="remote"><label>Base URL</label><input id="base_url" type="text" value="http://127.0.0.1:8089/v1">
-    <label>Model</label><input id="model" type="text" value="Qwen/Qwen2.5-7B-Instruct"></div>
+  <div id="llmsec">
+    <h2>Language model <span class="plain">— for the kinds decided by LLM</span></h2>
+    <select id="backend"></select>
+    <div id="remote"><label>Base URL</label><input id="base_url" type="text" value="http://127.0.0.1:8089/v1">
+      <label>Model</label><input id="model" type="text" value="Qwen/Qwen2.5-7B-Instruct"></div>
+    <div id="keybox"><label id="keylabel" for="apikey">Your API key for this provider</label>
+      <input id="apikey" type="password" autocomplete="off" spellcheck="false" placeholder="paste your own key"></div>
+    <div class="note" id="llmnote"></div>
+  </div>
   <div class="row"><button class="primary" id="run">Run</button><button id="stop">Stop</button></div>
   <div id="status">Ready.</div>
 </section>
@@ -71,7 +79,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px s
 </main>
 <script>
 const $=id=>document.getElementById(id), css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-let meta, run=null, header=null, frames=[], decisions=[], head=0, playing=true, timer=null, nodes={}, box=null, clock0=0;
+let meta, run=null, header=null, frames=[], decisions=[], head=0, playing=true, timer=null, nodes={}, box=null, clock0=0, polling=false;
+const MODEL_HINT={rule:'built-in: fixed behaviour',algorithm:'built-in: computes its best action',utility:'built-in: a choice model'};
 const dayClock=v=>{if(typeof v!=='string')return +v||0; const p=v.split(':').map(Number); return p[0]*3600+p[1]*60+(p[2]||0)};
 const two=n=>String(Math.floor(n)).padStart(2,'0');
 async function api(path,body){if(window.agmsimBackend)return window.agmsimBackend(path,body);   // online demo: the simulator runs in this page
@@ -81,25 +90,49 @@ function agentRows(){
   $('desc').textContent=sc.description; $('seed').value=sc.seed; $('count').value=sc.travelers;
   $('filter').innerHTML='<option value="">all kinds</option>'+sc.kinds.map(k=>`<option>${k}</option>`).join('');
   for(const k of sc.kinds){const kd=meta.kinds[k], a=sc.agents[k], tr=tb.insertRow(); tr.className='kind';
-    const lvl=typeof a.agency==='string'?a.agency:'L0';
-    tr.innerHTML=`<td title="${kd.title}">${k}</td><td><input type="checkbox" data-k="${k}" data-f="use_llm" ${a.use_llm?'checked':''}></td>
-    <td><select data-k="${k}" data-f="non_llm_policy">${kd.policies.filter(p=>p!=='llm'&&p!=='remote').map(p=>`<option ${p===a.policy?'selected':''}>${p}</option>`).join('')}</select></td>
+    const lvl=typeof a.agency==='string'?a.agency:'L0', pol=kd.policies.filter(p=>p!=='llm'&&p!=='remote');
+    tr.innerHTML=`<td title="${kd.title}">${k}</td>
+    <td><select data-k="${k}" data-f="model">${pol.map(p=>`<option value="${p}" title="${MODEL_HINT[p]||'built-in'}" ${!a.use_llm&&p===a.policy?'selected':''}>${p} (built-in)</option>`).join('')}<option value="llm" title="a language model, set below" ${a.use_llm?'selected':''}>LLM (language model)</option></select>
+      <div class="fb">if its reply is unusable: <select data-k="${k}" data-f="fallback">${pol.map(p=>`<option ${p===a.policy?'selected':''}>${p}</option>`).join('')}</select></div></td>
     <td><select data-k="${k}" data-f="agency">${Object.keys(kd.levels).map(l=>`<option ${l===lvl?'selected':''} title="${kd.levels[l].join(', ')||'no authority'}">${l}</option>`).join('')}</select></td>`}
+  tb.querySelectorAll('select[data-f=model]').forEach(e=>e.onchange=llmSection); llmSection();
   $('levelnote').textContent=Object.entries(meta.level_names).map(([k,v])=>`${k} ${v}`).join(' · ');
+}
+// Each kind has exactly one decision model. The language-model settings appear only when some kind uses one.
+function llmSection(){
+  let any=false;
+  document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const on=e.value==='llm'; any=any||on; e.parentNode.querySelector('.fb').style.display=on?'block':'none'});
+  $('llmsec').style.display=any?'block':'none'; backendFields();
+}
+function backendFields(){
+  const b=$('backend').value, preset=b.startsWith('preset:')?meta.llm_presets[b.slice(7)]:null, other=!preset&&b!=='mock';
+  $('remote').style.display=other?'block':'none';
+  $('keybox').style.display=meta.online&&(other||(preset&&preset.key_env))?'block':'none';
+  $('keylabel').textContent=other?'API key (leave empty if the server needs none)':'Your API key for this provider';
+  $('llmnote').textContent=b==='mock'?'The offline stand-in is not a language model: it lets a built-in model choose and answers in the same format, so the LLM path can be tried without one.'
+    :!meta.online?(preset&&preset.key_env?`The key is read from ${preset.key_env} in the .env file of the project folder.`:'')
+    :preset&&!preset.key_env?`Calls go from your browser to ${preset.base_url}: that server has to be running on your own machine and accept requests from web pages.`
+    :`The key stays in this browser tab and is sent only to ${preset?preset.base_url:'the address above'}. It is not saved anywhere. Calls are made one at a time, so a run takes minutes, and they are billed to your key.`;
 }
 async function start(){
   const ov=[`simulation.seed=${$('seed').value}`,`agents.traveler.count=${$('count').value}`]; let llm=false;
-  document.querySelectorAll('#agents [data-k]').forEach(e=>{const v=e.type==='checkbox'?e.checked:e.value; if(e.dataset.f==='use_llm'&&v)llm=true;
-    ov.push(`agents.${e.dataset.k}.${e.dataset.f}=${v}`)});
-  const b=$('backend').value;
-  if(llm){ if(b.startsWith('preset:')) ov.push(`llm.preset=${b.slice(7)}`);
-    else{ov.push(`llm.backend=${b}`); if(b!=='mock') ov.push(`llm.base_url=${$('base_url').value}`,`llm.model=${$('model').value}`)} }
+  document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const k=e.dataset.k, on=e.value==='llm'; llm=llm||on;
+    ov.push(`agents.${k}.use_llm=${on}`,`agents.${k}.non_llm_policy=${on?document.querySelector(`#agents select[data-f=fallback][data-k="${k}"]`).value:e.value}`)});
+  document.querySelectorAll('#agents select[data-f=agency]').forEach(e=>ov.push(`agents.${e.dataset.k}.agency=${e.value}`));
+  const b=$('backend').value, preset=b.startsWith('preset:')?meta.llm_presets[b.slice(7)]:null;
+  if(llm){ if(preset) ov.push(`llm.preset=${b.slice(7)}`);
+    else{ov.push(`llm.backend=${b}`); if(b!=='mock') ov.push(`llm.base_url=${$('base_url').value}`,`llm.model=${$('model').value}`)}
+    if(meta.online&&b!=='mock'){          // online demo: the visitor's own key, kept in this tab (see agmsim/browser.py)
+      const key=$('apikey').value.trim(), env=preset?preset.key_env:(key?'AGMSIM_API_KEY':null);
+      if(preset&&preset.key_env&&!key){$('status').textContent='Type your API key for this provider first.'; $('status').className='err'; $('apikey').focus(); return}
+      if(env){await api('/api/key',{env,key}); if(!preset)ov.push('llm.api_key_env=AGMSIM_API_KEY')} } }
   const r=await api('/api/run',{scenario:$('scenario').value,overrides:ov});
   run=r.id; header=null; frames=[]; decisions=[]; head=0; playing=true; $('play').textContent='Pause';
   $('log').innerHTML=''; $('metrics').textContent='Running…'; $('status').className=''; clearInterval(timer); timer=setInterval(poll,400); poll();
 }
 async function poll(){
-  if(!run)return; const r=await api(`/api/run/${run}?frames=${frames.length}&decisions=${decisions.length}`);
+  if(!run||polling)return; polling=true; let r;      // one request at a time: a slow answer must not be asked for twice
+  try{r=await api(`/api/run/${run}?frames=${frames.length}&decisions=${decisions.length}`)}finally{polling=false}
   if(r.header&&!header){header=r.header; clock0=dayClock(header.config.simulation.clock_start); nodes={}; let xs=[],ys=[]; for(const [n,x,y] of header.network.nodes){nodes[n]=[x,y];xs.push(x);ys.push(y)}
     box=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]}
   const follow=head>=frames.length-2; frames.push(...r.frames); decisions.push(...r.decisions); if(follow&&!playing)head=frames.length-1;
@@ -155,11 +188,10 @@ function draw(){
   requestAnimationFrame(draw);
 }
 (async()=>{meta=await api('/api/meta'); $('scenario').innerHTML=Object.keys(meta.scenarios).map(s=>`<option>${s}</option>`).join('');
-  $('backend').innerHTML=meta.llm_backends.filter(b=>b==='mock').map(b=>`<option value="${b}">mock (offline stand-in, not an LLM)</option>`).join('')
-    +Object.entries(meta.llm_presets||{}).map(([n,p])=>`<option value="preset:${n}">${n} — ${p.model}${p.key_env?' (key: '+p.key_env+' in .env)':''}</option>`).join('')
-    +meta.llm_backends.filter(b=>b!=='mock').map(b=>`<option value="${b}">${b==='openai_compatible'?'other OpenAI-compatible server':b}</option>`).join('');
-  if(meta.online)$('llmnote').textContent='Online demo: no language model is connected. Ticking LLM uses an offline stand-in; run AgMSim on your own machine to use a real model.';
-  $('backend').value='mock'; const tog=()=>$('remote').style.display=($('backend').value==='mock'||$('backend').value.startsWith('preset:'))?'none':'block'; $('backend').onchange=tog; tog();
+  $('backend').innerHTML=Object.entries(meta.llm_presets||{}).map(([n,p])=>`<option value="preset:${n}">${n} — ${p.model}</option>`).join('')
+    +meta.llm_backends.filter(b=>b!=='mock').map(b=>`<option value="${b}">${b==='openai_compatible'?'another OpenAI-compatible server':b}</option>`).join('')
+    +'<option value="mock">offline stand-in (not a language model)</option>';
+  $('backend').value='mock'; $('backend').onchange=backendFields;
   $('scenario').onchange=agentRows; agentRows(); $('run').onclick=start; $('stop').onclick=()=>run&&api(`/api/run/${run}/stop`,{});
   $('play').onclick=()=>{playing=!playing; $('play').textContent=playing?'Pause':'Play'}; $('scrub').oninput=e=>{head=+e.target.value; playing=false; $('play').textContent='Play'};
   $('filter').onchange=()=>{$('log').innerHTML=''; renderLog(decisions)}; requestAnimationFrame(draw)})();

@@ -24,6 +24,7 @@ import http.client
 import json
 import os
 import random
+import sys
 import threading
 import time
 import urllib.error
@@ -36,6 +37,9 @@ from typing import Optional
 from .registry import Registry
 
 LLM_BACKENDS = Registry("LLM backend")
+
+#: True when AgMSim runs inside a web page (Pyodide): HTTP then goes through the browser, see _browser_post.
+IN_BROWSER = sys.platform == "emscripten"
 
 
 def register_llm(name: str):
@@ -94,6 +98,30 @@ class LLMResponse:
     latency_ms: float = 0.0
     cached: bool = False              # served from the cassette, no model call
     cached_input_tokens: int = 0      # part of input_tokens the provider served from its prompt cache
+
+
+def _browser_post(url: str, headers: dict, data: bytes, timeout_seconds: float) -> tuple[int, bytes]:
+    """POST from inside a web page, where Python has no sockets: a synchronous request made by the browser.
+
+    The simulator runs in a web worker, where a synchronous request is permitted and blocks nothing
+    the visitor sees. The browser only lets the page read the answer if the server allows requests
+    from web pages (CORS); if it does not, or the address cannot be reached, the run stops with an
+    explanation rather than silently falling back on every decision.
+    """
+    from js import XMLHttpRequest          # exists only inside a browser
+
+    xhr = XMLHttpRequest.new()
+    xhr.open("POST", url, False)
+    for name, value in headers.items():
+        xhr.setRequestHeader(name, value)
+    xhr.timeout = int(timeout_seconds * 1000)
+    try:
+        xhr.send(data.decode())
+    except Exception as exc:               # network failure, timeout, or blocked by the browser
+        raise LLMError(f"this page could not reach {url}. The server has to accept requests from web pages "
+                       "(CORS), and a page served over https can only call https addresses or your own "
+                       f"machine. Browser message: {exc}") from exc
+    return int(xhr.status), str(xhr.responseText or "").encode()
 
 
 class LLMClient:
@@ -221,6 +249,8 @@ class OpenAICompatibleClient(LLMClient):
                 load_env_file()
                 load_env_file(Path(__file__).resolve().parent.parent)
                 key = os.environ.get(cfg.api_key_env)
+            if not key and IN_BROWSER:
+                raise LLMError("no API key was given: type your own key for this provider into the page")
             if not key:
                 raise LLMError(f"the API key is missing: put a line {cfg.api_key_env}=<your key> in a file named "
                                f".env in the project folder, or export {cfg.api_key_env} (llm.api_key_env)")
@@ -234,6 +264,8 @@ class OpenAICompatibleClient(LLMClient):
 
     def _post(self, data: bytes) -> tuple[int, bytes]:
         """POST the body and return (status, raw response)."""
+        if IN_BROWSER:
+            return _browser_post(self.url, self.headers, data, self.cfg.timeout_seconds)
         if not self._keep_alive:             # also the path that honours HTTP(S)_PROXY
             req = urllib.request.Request(self.url, data=data, headers=self.headers, method="POST")
             try:

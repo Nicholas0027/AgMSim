@@ -693,7 +693,7 @@ def test_web_interface_runs_without_a_server():
     from agmsim.server import RUNS
 
     info = json.loads(browser.request("/api/meta"))
-    assert info["online"] and info["llm_presets"] == {} and info["llm_backends"] == ["mock"]
+    assert info["online"] and info["llm_presets"]["deepseek"]["key_env"] == "DEEPSEEK_API_KEY"
     assert "evening_plans" in info["scenarios"]
     run_id = json.loads(browser.request("/api/run", json.dumps({"scenario": "demo_3x3", "overrides": []})))["id"]
     assert RUNS[run_id].thread is None
@@ -703,9 +703,72 @@ def test_web_interface_runs_without_a_server():
         assert json.loads(browser.request(f"/api/run/{run_id}?frames=0&decisions=0"))["status"] in ("starting", "running")
     view = json.loads(browser.request(f"/api/run/{run_id}?frames=0&decisions=0"))
     assert slices > 2 and view["status"] == "done" and view["frames"] and view["metrics"]["travelers"]["completed"] > 0
+    assert RUNS[run_id].sim.cfg.llm.max_concurrency == 1               # no threads in a browser tab
     assert "obs" in json.loads(browser.request(f"/api/run/{run_id}/decision/0"))
     again = json.loads(browser.request("/api/run", "{}"))["id"]
     assert again == run_id + 1 and list(RUNS) == [again]           # only the latest run is kept in a browser tab
     assert json.loads(browser.request(f"/api/run/{again}/stop", "{}")) == {"ok": True}
     assert not browser.advance(0.01) or not browser.advance(5.0)
     assert json.loads(browser.request("/api/nothing")) == {"error": "not found"}
+
+
+def test_online_demo_takes_the_visitors_key_and_calls_the_model_through_the_browser(monkeypatch):
+    """In the online demo the key is typed into the page, kept in memory, and the browser makes the calls."""
+    import sys
+    import types
+
+    from agmsim import browser, llm
+    from agmsim.server import RUNS
+
+    sent = []
+
+    class FakeRequest:                     # stands in for the browser's XMLHttpRequest
+        status, responseText = 200, ""
+
+        @classmethod
+        def new(cls):
+            return cls()
+
+        def open(self, method, url, is_async):
+            self.call = {"method": method, "url": url, "async": is_async, "headers": {}}
+
+        def setRequestHeader(self, name, value):
+            self.call["headers"][name] = value
+
+        def send(self, body):
+            self.call["body"] = json.loads(body)
+            sent.append(self.call)
+            key = self.call["headers"].get("Authorization")
+            if key != "Bearer visitor-test-key":
+                self.status, self.responseText = 401, '{"error": "bad key"}'
+                return
+            obs = json.loads(self.call["body"]["messages"][1]["content"].split("<observation>")[1].split("</observation>")[0])
+            first = obs["permitted_actions"][0]
+            args = {name: spec["choices"][0] for name, spec in (first.get("args") or {}).items() if spec.get("choices")}
+            self.responseText = json.dumps({"choices": [{"message": {"content": json.dumps({"action": first["action"], "args": args})}}],
+                                            "usage": {"prompt_tokens": 10, "completion_tokens": 5}})
+
+    monkeypatch.setitem(sys.modules, "js", types.SimpleNamespace(XMLHttpRequest=FakeRequest))
+    monkeypatch.setattr(llm, "IN_BROWSER", True)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setattr(llm, "load_env_file", lambda *a, **k: None)    # a browser tab has no .env file
+
+    def run_with(key):
+        if key is not None:
+            assert json.loads(browser.request("/api/key", json.dumps({"env": "DEEPSEEK_API_KEY", "key": key}))) == {"ok": True}
+        body = {"scenario": "demo_3x3", "overrides": ["agents.vehicle.use_llm=true", "llm.preset=deepseek"]}
+        run_id = json.loads(browser.request("/api/run", json.dumps(body)))["id"]
+        while browser.advance(1.0):
+            pass
+        return RUNS[run_id], json.loads(browser.request(f"/api/run/{run_id}?frames=0&decisions=0"))
+
+    _, view = run_with("")                                             # nothing typed
+    assert view["status"] == "error" and "type your own key" in view["error"]
+    _, view = run_with("wrong-key")
+    assert view["status"] == "error" and "HTTP 401" in view["error"]
+    run, view = run_with("  visitor-test-key ")
+    assert view["status"] == "done" and view["metrics"]["llm"]["calls"] == len([c for c in sent if c["headers"]["Authorization"].endswith("test-key")]) > 0
+    assert all(c["url"] == "https://api.deepseek.com/chat/completions" and c["async"] is False for c in sent)
+    shown = json.dumps(view) + json.dumps(run.recorder.header, default=str) + json.dumps(run.recorder.decisions, default=str)
+    assert "visitor-test-key" not in shown                             # the key is in no config, trace or page data
+    assert json.loads(browser.request("/api/key", json.dumps({"env": "path; rm", "key": "x"})))["ok"] is False

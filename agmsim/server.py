@@ -103,7 +103,7 @@ class Run:
 
 
 def meta(online: bool = False) -> dict:
-    """What the page needs to build its form. ``online``: no language model can be reached (browser demo)."""
+    """What the page needs to build its form. ``online``: the browser demo, where a visitor types their own key."""
     kinds = {}
     for name in KINDS.names():
         kind = KINDS.get(name)
@@ -118,17 +118,17 @@ def meta(online: bool = False) -> dict:
                            "agents": {k: {"use_llm": getattr(cfg.agents, k).use_llm,
                                           "policy": getattr(cfg.agents, k).non_llm_policy,
                                           "agency": getattr(cfg.agents, k).agency} for k in cfg.active_kinds()}}
-    presets = {} if online else {name: {"model": p.get("model", ""), "key_env": p.get("api_key_env")}
-                                 for name, p in LLM_PRESETS.items() if name != "mock"}
+    presets = {name: {"model": p.get("model", ""), "key_env": p.get("api_key_env"), "base_url": p.get("base_url", "")}
+               for name, p in LLM_PRESETS.items() if name != "mock"}
     return {"scenarios": scenarios, "kinds": kinds, "level_names": LEVEL_NAMES, "llm_presets": presets,
-            "llm_backends": ["mock"] if online else LLM_BACKENDS.names(), "online": online}
+            "llm_backends": LLM_BACKENDS.names(), "online": online}
 
 
 def route(method: str, path: str, query: Optional[dict] = None, body: Optional[dict] = None, online: bool = False):
     """Answer one request of the page: ``(HTTP status, JSON-serialisable object)``.
 
-    ``online`` is the browser demo: runs are not threaded (the caller advances them) and only the
-    latest run is kept.
+    ``online`` is the browser demo: runs are not threaded (the caller advances them), model calls
+    are made one at a time (a browser tab has no threads to spare) and only the latest run is kept.
     """
     parts = [p for p in path.split("/") if p]
     query = query or {}
@@ -147,8 +147,8 @@ def route(method: str, path: str, query: Optional[dict] = None, body: Optional[d
             run_id = max(RUNS, default=0) + 1
             if online:
                 RUNS.clear()
-            RUNS[run_id] = Run(run_id, body.get("scenario", "demo_3x3"), list(body.get("overrides", [])),
-                               threaded=not online)
+            overrides = list(body.get("overrides", [])) + (["llm.max_concurrency=1"] if online else [])
+            RUNS[run_id] = Run(run_id, body.get("scenario", "demo_3x3"), overrides, threaded=not online)
         return 200, {"id": run_id}
     elif run is not None and len(parts) == 4 and parts[3] == "stop":
         run.stop = True
