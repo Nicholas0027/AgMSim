@@ -50,7 +50,8 @@ watch the run and inspect any decision. Other commands: `agmsim list`, `agmsim m
 
 The online demo is that same page as a static site: `.venv/bin/python online/build.py` writes
 `online/site/`, in which Pyodide runs the `agmsim` package in the visitor's browser (see
-`agmsim/browser.py`). Any static host can serve it; nothing is sent to a server.
+`agmsim/browser.py`). Any static host can serve it; nothing is sent to a server. `sh online/publish.sh` rebuilds it and
+pushes it to the `gh-pages` branch, which GitHub Pages serves.
 
 ## The five built-in kinds of agent
 
