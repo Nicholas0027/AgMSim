@@ -128,6 +128,21 @@ EXPERIMENTS = {
                     "signals.stopped_share": "被红灯拦下的比例", "signals.switches": "切换次数",
                     "operator.signal_requests": "协调者指令数"},
     },
+    "ondemand": {
+        "question": "按需车有了 agency（改道、拒单、主动调度）之后，乘客等车和车队效率怎么变？",
+        "scenario": "ondemand.yaml",
+        "arms": {
+            "车 L0（接所有派单，原地等）": {},
+            "车 L1（按路况改道）": {"agents.ondemand.agency": "L1"},
+            "车 L2 · 逐利（每分钟收入低就拒单）": {"agents.ondemand.agency": "L2", "agents.ondemand.objective": "profit"},
+            "车 L2 · 服务（有拒单权但不用）": {"agents.ondemand.agency": "L2", "agents.ondemand.objective": "service"},
+            "车 L4 · 服务（空闲时主动调度）": {"agents.ondemand.agency": "L4", "agents.ondemand.objective": "service"},
+        },
+        "metrics": {"outcomes.wait_time_s_mean": "平均等车(秒)", "travelers.completion_rate": "出行完成率",
+                    "ondemand.cancelled": "乘客放弃叫车", "ondemand.declined": "拒单次数",
+                    "ondemand.repositions": "调度次数", "ondemand.empty_km_share": "空驶里程占比",
+                    "ondemand.profit_usd": "车队利润(美元)", "outcomes.vmt_miles": "VMT(英里)"},
+    },
     "day_plan": {
         "question": "一天的计划被突发事故打乱时，当天就改计划（而不是像 MATSim 那样靠反复重演来学）能挽回多少？",
         "scenario": "evening.yaml",

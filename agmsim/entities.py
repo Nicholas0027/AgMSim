@@ -24,6 +24,8 @@ class TState(str, Enum):
     ON_BUS = "on_bus"
     EGRESS = "egress"              # walking from the bus stop to the destination
     WALKING = "walking"            # walking the whole trip
+    WAITING_RIDE = "waiting_ride"  # has called an on-demand car and waits for it
+    IN_RIDE = "in_ride"            # travelling in an on-demand car
     ARRIVED = "arrived"
     ABANDONED = "abandoned"        # the trip was not made
 
@@ -36,6 +38,15 @@ class VState(str, Enum):
     TO_CHARGER = "to_charger"
     QUEUED = "queued"              # waiting for a charger
     CHARGING = "charging"
+
+
+class CState(str, Enum):
+    """Life-cycle of an on-demand car."""
+
+    IDLE = "idle"
+    TO_PICKUP = "to_pickup"
+    OCCUPIED = "occupied"          # carrying a traveller
+    REPOSITIONING = "repositioning"  # driving empty to wait somewhere else
 
 
 class BState(str, Enum):
@@ -90,6 +101,7 @@ class Traveler:
     bus: Optional[dict] = None                # bus plan: line, board, alight, access_s, egress_s
     paid: float = 0.0
     plan: Optional[object] = None             # day plan (agmsim.plans.Plan); None: a single trip
+    ride: Optional[str] = None                # the ride request this traveller has open, if any
 
 
 @dataclass
@@ -137,6 +149,51 @@ class Vehicle:
     energy_cost: float = 0.0
     tolls: float = 0.0
     depleted: int = 0                         # ticks driven with an empty battery
+
+
+@dataclass
+class Cab:
+    """An on-demand car: carries one traveller at a time on request."""
+
+    id: str
+    node: int
+    state: CState = CState.IDLE
+    link: Optional[int] = None
+    offset: float = 0.0
+    path: list = field(default_factory=list)
+    target: Optional[int] = None
+    request: Optional[str] = None             # the request it is serving
+    proposal: Optional[str] = None            # a request the service proposes to it, not yet answered
+    queued: bool = False                      # held at a traffic light
+    go: bool = False
+    route_pending: bool = False
+    next_route_check: int = 0
+    next_idle_check: int = 0
+    # accounting ------------------------------------------------------------
+    m_loaded: float = 0.0                     # metres with a traveller on board
+    m_empty: float = 0.0                      # metres empty: to pick-ups and while repositioning
+    s_moving: float = 0.0
+    trips: int = 0
+    declined: int = 0
+    repositions: int = 0
+    reroutes: int = 0
+    revenue: float = 0.0
+
+
+@dataclass
+class RideRequest:
+    id: str
+    traveler: str
+    origin: int
+    destination: int
+    opened: int                               # tick at which the traveller called
+    fare: float
+    trip_m: float
+    state: str = "open"                       # open | proposed | assigned | on_board | done | cancelled
+    offered: Optional[str] = None             # the car it is proposed to
+    car: Optional[str] = None                 # the car that took it
+    declined_by: set = field(default_factory=set)
+    picked: Optional[int] = None
 
 
 @dataclass

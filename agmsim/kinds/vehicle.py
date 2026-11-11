@@ -24,7 +24,7 @@ from ..agency import AgencySpec
 from ..entities import TState, Vehicle, VState
 from ..network import current_weight, free_flow_weight
 from ..observation import km, minutes
-from .base import Kind, advance, path_to, register_kind
+from .base import Kind, advance, path_to, register_kind, update_flows
 
 OBJECTIVE_FAST = "Bring your owner to the destination as quickly as possible."
 OBJECTIVE_OWNER = ("Act in your owner's interest: weigh travel time against money (tolls, fares, energy) "
@@ -405,16 +405,7 @@ class VehicleKind(Kind):
     def physics(self):
         w, sim = self.world, self.sim
         now, dt = w.tick + 1, w.dt
-        net_cfg = sim.cfg.network
-        if net_cfg.congestion:
-            counts: dict = {}
-            for v in w.vehicles.values():
-                if v.link is not None:
-                    counts[v.link] = counts.get(v.link, 0) + 1
-            for bus in w.buses.values():
-                if bus.link is not None:
-                    counts[bus.link] = counts.get(bus.link, 0) + 2
-            w.net.set_flows(counts, net_cfg.jam_spacing_m, net_cfg.capacity_scale)
+        update_flows(sim)
         for v in w.vehicles.values():
             if v.state in (VState.QUEUED, VState.CHARGING):
                 v.s_charge += dt

@@ -22,8 +22,8 @@ from typing import Any, Optional, get_type_hints
 
 import yaml
 
-MACHINE_KINDS = ("vehicle", "bus", "evcs", "operator", "signal")
-KIND_ORDER = ("operator", "signal", "evcs", "traveler", "bus", "vehicle")   # order in which actions are applied
+MACHINE_KINDS = ("vehicle", "bus", "evcs", "operator", "signal", "ondemand")
+KIND_ORDER = ("operator", "signal", "evcs", "traveler", "bus", "vehicle", "ondemand")   # order in which actions are applied
 
 
 class ConfigError(ValueError):
@@ -181,6 +181,24 @@ class SignalCfg(AgentCfg):
 
 
 @dataclass
+class OnDemandCfg(AgentCfg):
+    """On-demand cars: a fleet that carries one traveller at a time on request."""
+
+    fleet: int = 0                      # number of cars; 0: no on-demand service
+    depots: list = field(default_factory=list)   # nodes at which the cars start (default: anywhere)
+    objective: str = "balanced"         # what the cars are told to pursue: profit | service | balanced
+    base_fare: float = 2.0              # USD per ride ...
+    fare_per_km: float = 1.0            # ... plus per km of the trip ...
+    fare_per_minute: float = 0.3        # ... plus per minute of its free-flow driving time
+    operating_cost_per_km: float = 0.25  # what driving costs the car, with or without a passenger
+    reroute_check_seconds: float = 120.0
+    min_saving_seconds: float = 30.0
+    route_alternatives: int = 3
+    idle_check_seconds: float = 120.0   # how often a free car may reconsider where to wait
+    demand_window_seconds: float = 300.0  # "recent requests" shown to a free car cover this long
+
+
+@dataclass
 class AgentsCfg:
     traveler: TravelerCfg = field(default_factory=TravelerCfg)
     vehicle: VehicleCfg = field(default_factory=VehicleCfg)
@@ -188,6 +206,7 @@ class AgentsCfg:
     evcs: EvcsCfg = field(default_factory=EvcsCfg)
     operator: OperatorCfg = field(default_factory=OperatorCfg)
     signal: SignalCfg = field(default_factory=SignalCfg)
+    ondemand: OnDemandCfg = field(default_factory=OnDemandCfg)
 
 
 # --------------------------------------------------------------------------- LLM, recording, metrics
@@ -359,6 +378,7 @@ class Config:
             "traveler": a.traveler.count > 0,
             "bus": bool(a.bus.lines),
             "vehicle": a.traveler.count > 0 and a.traveler.car_ownership > 0,
+            "ondemand": a.traveler.count > 0 and a.ondemand.fleet > 0,
         }
         return [k for k in KIND_ORDER if present[k]]
 
@@ -372,7 +392,8 @@ class Config:
         _choice("record.observations", self.record.observations, ("full", "digest"))
         _choice("llm.cassette_mode", self.llm.cassette_mode, ("auto", "replay", "record"))
         self.llm.resolved()     # rejects an unknown llm.preset
-        _choice("agents.traveler.default_mode", self.agents.traveler.default_mode, ("car", "bus", "walk"))
+        _choice("agents.traveler.default_mode", self.agents.traveler.default_mode, ("car", "bus", "walk", "ride"))
+        _choice("agents.ondemand.objective", self.agents.ondemand.objective, ("profit", "service", "balanced"))
         _choice("agents.vehicle.link_conditions", self.agents.vehicle.link_conditions, ("none", "local", "global"))
         if self.demand.plan and (len(self.demand.plan) < 2 or any("type" not in item for item in self.demand.plan)):
             raise ConfigError("demand.plan needs at least two activities, each with a 'type'")

@@ -10,12 +10,12 @@
 :root{color-scheme:light;
   --page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;
   --ring:rgba(11,11,11,.10);--wash:rgba(11,11,11,.045);--accent:#2a78d6;--critical:#d03b3b;--track:#cde2fb;
-  --k-traveler:#2a78d6;--k-vehicle:#eb6834;--k-bus:#1baf7a;--k-evcs:#eda100;--k-operator:#e87ba4;--k-signal:#008300;--k-other:#898781;
+  --k-traveler:#2a78d6;--k-vehicle:#eb6834;--k-bus:#1baf7a;--k-evcs:#eda100;--k-operator:#e87ba4;--k-signal:#008300;--k-ondemand:#6250d6;--k-other:#898781;
   --p-rest:#86b6ef;--p-move:#2a78d6;--p-done:#104281;--road:#c3c2b7;--road-busy:#3a3936;--parked:#a9a79f}
 @media (prefers-color-scheme:dark){:root{color-scheme:dark;
   --page:#0d0d0d;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;
   --ring:rgba(255,255,255,.10);--wash:rgba(255,255,255,.06);--accent:#3987e5;--critical:#d03b3b;--track:#0d366b;
-  --k-traveler:#3987e5;--k-vehicle:#d95926;--k-bus:#199e70;--k-evcs:#c98500;--k-operator:#d55181;--k-signal:#008300;--k-other:#898781;
+  --k-traveler:#3987e5;--k-vehicle:#d95926;--k-bus:#199e70;--k-evcs:#c98500;--k-operator:#d55181;--k-signal:#008300;--k-ondemand:#9085e9;--k-other:#898781;
   --p-rest:#86b6ef;--p-move:#3987e5;--p-done:#184f95;--road:#383835;--road-busy:#d8d7cf;--parked:#5c5b57}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--page);color:var(--ink);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -140,6 +140,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
       <span><i style="background:var(--k-vehicle)"></i>car driving</span>
       <span><i class="ring" style="border-color:var(--k-vehicle)"></i>car charging</span>
       <span><i style="background:var(--parked)"></i>car parked</span>
+      <span><i style="background:var(--k-ondemand)"></i>on-demand car with a passenger</span>
+      <span><i class="ring" style="border-color:var(--k-ondemand)"></i>… free or on its way</span>
       <span><i class="sq" style="background:var(--k-bus)"></i>bus</span>
       <span><i class="ln" style="background:var(--k-signal)"></i>traffic light: who has green</span>
       <span><i style="background:var(--p-move)"></i>person on foot or waiting</span>
@@ -184,12 +186,12 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
 const $=id=>document.getElementById(id);
 const el=(tag,cls,text)=>{const e=document.createElement(tag); if(cls)e.className=cls; if(text!==undefined)e.textContent=text; return e};
 const svgEl=(tag,attrs,text)=>{const e=document.createElementNS('http://www.w3.org/2000/svg',tag); for(const k in attrs)e.setAttribute(k,attrs[k]); if(text!==undefined)e.textContent=text; return e};
-const KINDS=['traveler','vehicle','bus','evcs','operator','signal'];   // fixed order: a kind keeps its colour everywhere
-const KIND_LABEL={traveler:'traveller',vehicle:'private car',evcs:'charging station',operator:'orchestrator',signal:'traffic light'};
+const KINDS=['traveler','vehicle','bus','evcs','operator','signal','ondemand'];   // fixed order: a kind keeps its colour everywhere
+const KIND_LABEL={traveler:'traveller',vehicle:'private car',evcs:'charging station',operator:'orchestrator',signal:'traffic light',ondemand:'on-demand car'};
 const label=k=>KIND_LABEL[k]||k;            // what a kind is called on the page; settings keep the kind's own name
 const kindColor=k=>`var(--k-${KINDS.includes(k)?k:'other'})`;
 const MODEL_HINT={rule:'built-in: fixed behaviour',algorithm:'built-in: computes its best action',utility:'built-in: a choice model'};
-const MODE_COLOR={walk:'var(--k-traveler)',car:'var(--k-vehicle)',bus:'var(--k-bus)','car+bus':'var(--k-evcs)'};
+const MODE_COLOR={walk:'var(--k-traveler)',car:'var(--k-vehicle)',bus:'var(--k-bus)','car+bus':'var(--k-evcs)',ride:'var(--k-ondemand)'};
 let meta, run=null, header=null, frames=[], decisions=[], head=0, playing=true, timer=null, polling=false;
 let nodes={}, box=null, clock0=0, dt=1, horizon=1, theme={}, model=null, hoverT=null, selected=null, story=null, agentFilter=null;
 let chat=[], extra={}, chatUsed=false;      // the conversation with the assistant; settings it made that the form has no control for
@@ -207,7 +209,7 @@ const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 const mix=(a,b,t)=>`rgb(${a.map((x,i)=>Math.round(x+(b[i]-x)*t)).join(',')})`;
 function readTheme(){const cs=getComputedStyle(document.documentElement), v=n=>cs.getPropertyValue(n).trim();
   theme={surface:v('--surface'),ink:v('--ink'),ink2:v('--ink2'),muted:v('--muted'),road:rgb(v('--road')),busy:rgb(v('--road-busy')),critical:v('--critical'),
-    vehicle:v('--k-vehicle'),bus:v('--k-bus'),evcs:v('--k-evcs'),signal:v('--k-signal'),rest:v('--p-rest'),move:v('--p-move'),parked:v('--parked')}}
+    vehicle:v('--k-vehicle'),bus:v('--k-bus'),evcs:v('--k-evcs'),signal:v('--k-signal'),ondemand:v('--k-ondemand'),rest:v('--p-rest'),move:v('--p-move'),parked:v('--parked')}}
 
 // ---------------------------------------------------------------- setup form
 function agentRows(){
@@ -348,6 +350,7 @@ function renderStory(){
   host.append(facts);
   if(story.timeline&&story.timeline.length){host.append(el('h3','',`${d.agent}'s ${story.timeline.some(x=>x.kind==='before')?'trip':'day'}`)); const holder=el('div'); host.append(holder); dayChart(holder)}
   if(story.skipped&&story.skipped.length)host.append(el('div','note','Dropped from the plan: '+story.skipped.join(', ')));
+  if(story.summary)host.append(el('div','note',Object.entries(story.summary).map(([k,v])=>`${k.replace(/_/g,' ')}: ${v}`).join(' · ')));
   const only=el('button','linkish',agentFilter===d.agent?`Show all agents' decisions`:`Show only ${d.agent}'s ${story.decisions.length} decisions`);
   only.onclick=()=>{agentFilter=agentFilter===d.agent?null:d.agent; refillLog(); renderStory()}; host.append(only);
   const raw=el('details'); raw.append(el('summary','','What the agent was shown (the raw record)'), el('pre','',JSON.stringify(d,null,1))); host.append(raw);
@@ -456,6 +459,7 @@ function renderMetrics(m){
     tiles.push(['Vehicle miles travelled',n(O.vmt_miles)+' mi',`VMT · ${n(O.vkt_km)} km, cars and buses`]);
     tiles.push(['Vehicle hours travelled',n(O.vht_hours)+' h','VHT · time vehicles were on the road']);
     tiles.push(['Average traffic speed',O.traffic_speed_mph===null?'–':O.traffic_speed_mph.toFixed(1)+' mph',O.traffic_speed_kmh===null?'no vehicle moved':`${O.traffic_speed_kmh.toFixed(1)} km/h · VMT ÷ VHT`])}
+  if(m.ondemand)tiles.push(['On-demand rides',String(m.ondemand.rides),`${m.ondemand.cancelled} gave up waiting · ${Math.round(m.ondemand.empty_km_share*100)}% of the cars' km empty`]);
   if(m.signals)tiles.push(['Wait at traffic lights',m.signals.wait_s_mean.toFixed(1)+' s',`per vehicle passing a light · ${Math.round(m.signals.stopped_share*100)}% had to stop`]);
   if(m.travelers){tiles.push(['Trips completed',String(T.completed),`of ${T.trips} (${Math.round(T.completion_rate*100)}%)`]);
     tiles.push(['Mean trip time',mins(T.trip_time_s_mean),`9 in 10 under ${mins(T.trip_time_s_p90)}`])}
@@ -466,7 +470,7 @@ function renderMetrics(m){
   const asked=Object.values(m.decisions).reduce((a,d)=>a+d.decided,0), usedAll=Object.values(m.decisions).reduce((a,d)=>a+d.exercised,0);
   if(L.calls||L.replayed)tiles.push(['Model calls',String(L.calls),`${L.fallbacks} fell back to a built-in model`]);
   else tiles.push(['Decisions asked',String(asked),`${usedAll} used their authority`]);
-  const grid=el('div'); grid.id='tiles'; for(const [l,v,s] of tiles.slice(0,10)){const t=el('div','tile'); t.append(el('div','tl',l),el('div','tv',v),el('div','ts',s)); grid.append(t)} host.append(grid);
+  const grid=el('div'); grid.id='tiles'; for(const [l,v,s] of tiles.slice(0,12)){const t=el('div','tile'); t.append(el('div','tl',l),el('div','tv',v),el('div','ts',s)); grid.append(t)} host.append(grid);
   const modes=Object.entries(T.mode_share||{}).filter(([,v])=>v>0);
   if(modes.length>1){host.append(el('h2','','How trips were made')); const seg=el('div','seg'), lg=el('div','legend');
     for(const [name,share] of modes){const b=el('div'); b.style.flex=share; b.style.background=MODE_COLOR[name]||'var(--k-other)'; if(name==='car+bus')b.style.color='#0b0b0b';
@@ -488,6 +492,8 @@ function renderMetrics(m){
   add('plans','activities_skipped','Optional activities dropped'); add('plans','review_sensitivity','Changed when worth it minus when not');
   add('vehicles','travel_time_ratio','Car time / free-flow time'); add('vehicles','reroutes','Re-routes by AgVs'); add('vehicles','suggestions','Transfers suggested by AgVs'); add('vehicles','suggestions_accepted','… accepted by owners');
   add('vehicles','charge_stops','Charging trips'); add('vehicles','tolls_usd','Tolls paid (USD)'); add('bus','boardings','Bus boardings'); add('bus','holds','Bus holds'); add('evcs','revenue_usd','Station revenue (USD)');
+  add('ondemand','requests','On-demand cars: requests'); add('ondemand','rides','… rides made'); add('ondemand','cancelled','… travellers who gave up waiting'); add('ondemand','pickup_wait_s_mean','… wait from call to pick-up (s)');
+  add('ondemand','declined','… requests turned down by a car'); add('ondemand','repositions','… moves while free'); add('ondemand','empty_km_share','… share of km driven empty'); add('ondemand','profit_usd','… fares minus driving cost (USD)');
   add('signals','junctions','Junctions with traffic lights'); add('signals','wait_s_mean','Wait at traffic lights, per vehicle passing (s)'); add('signals','stopped_share','… share that had to stop');
   add('signals','switches','Changes of green'); add('signals','requests_followed','Requests of the orchestrator followed'); add('operator','signal_requests','Orchestrator: instructions to traffic lights');
   add('operator','advisories_published','Advisories published'); add('operator','toll_usd_final','Final cordon toll (USD)');
@@ -526,6 +532,10 @@ function draw(){
     else if(state==='driving'){g.arc(p[0],p[1],4,0,7); g.fillStyle=theme.vehicle; g.fill(); g.strokeStyle=theme.surface; g.lineWidth=1.5; g.stroke()}
     else{g.arc(p[0],p[1],3.6,0,7); g.strokeStyle=theme.vehicle; g.lineWidth=2; g.stroke()}
     if(who.includes(v[0]))mark=p}
+  for(const c of fr.ondemand||[]){const p=P(c[1],c[2]); g.beginPath();        // filled while it carries someone, a ring otherwise
+    if(c[3]==='occupied'){g.arc(p[0],p[1],4,0,7); g.fillStyle=theme.ondemand; g.fill(); g.strokeStyle=theme.surface; g.lineWidth=1.5; g.stroke()}
+    else{g.arc(p[0],p[1],3.4,0,7); g.strokeStyle=theme.ondemand; g.lineWidth=c[3]==='to_pickup'?2.4:1.5; g.stroke()}
+    if(who.includes(c[0]))mark=p}
   for(const b of fr.bus||[]){const p=P(b[1],b[2]); g.fillStyle=theme.bus; g.beginPath(); g.roundRect(p[0]-9,p[1]-6,18,12,3); g.fill(); g.fillStyle='#fff'; g.fillText(b[4],p[0],p[1]+3.5)}
   if(mark){g.beginPath(); g.arc(mark[0],mark[1],10,0,7); g.strokeStyle=theme.ink; g.lineWidth=1.5; g.stroke(); g.fillStyle=theme.ink; g.fillText(story.decision.agent,mark[0],mark[1]-14)}
   const op=(fr.operator||[])[0]; $('clock').textContent=clockText(fr.t,true)+(op?`  ${op[1]?'advisory ':''}${op[2]?'bus priority ':''}${op[3]?'toll $'+op[3]:''}`:'');

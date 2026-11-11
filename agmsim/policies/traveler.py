@@ -8,6 +8,14 @@ from ..plans import REVIEW_GAIN_USD, option_value
 from .base import Policy, register_policy
 
 
+def _still_to_wait(context: dict) -> float:
+    """Minutes until the bus, or the car that was called, is expected (a car not yet found counts as far away)."""
+    if "next_bus_eta_min" in context:
+        return context["next_bus_eta_min"]
+    eta = context.get("pickup_eta_min")
+    return 15.0 if eta is None else eta
+
+
 @register_policy("rule", role="traveler")
 class RuleTraveler(Policy):
     """Fixed behavioural rules.
@@ -26,7 +34,7 @@ class RuleTraveler(Policy):
             return Decision("accept_suggestion", {}, "rule: follow the vehicle")
         if obs.trigger == "wait_check":
             patience = obs.state["persona"]["patience_min"]
-            if obs.context["waited_min"] > patience and obs.context["next_bus_eta_min"] > 2.0:
+            if obs.context["waited_min"] > patience and _still_to_wait(obs.context) > 2.0:
                 return Decision("give_up_waiting", {}, "rule: waited longer than patience")
             return Decision("keep_waiting", {}, "rule: within patience")
         return obs.default
@@ -109,7 +117,7 @@ class UtilityTraveler(Policy):
 
         if obs.trigger == "wait_check":
             ctx = obs.context
-            waited, remaining = ctx["waited_min"], ctx["next_bus_eta_min"]
+            waited, remaining = ctx["waited_min"], _still_to_wait(ctx)
             alternatives = ctx.get("alternatives") or []
             if alternatives and waited + remaining > 1.5 * persona["patience_min"]:
                 return Decision("give_up_waiting", {}, "utility: expected wait exceeds tolerance")

@@ -102,11 +102,17 @@ class TravelerKind(Kind):
                 self._needs.setdefault(tr.t_need, []).append(tr)
             else:
                 tr.state, tr.origin = TState.AT_ACTIVITY, tr.plan.activities[0].node
+        if "ondemand" in sim.kinds:         # only then is calling a car part of what a language model is told
+            self.role_prompt = type(self).role_prompt + (
+                " You can also call an on-demand car (the option 'ride'): it has to come to you first, which takes "
+                "a while, and you pay its fare.")
+            self.triggers = {**type(self).triggers, "wait_check": "you have been waiting, at a bus stop or for the "
+                             "car you called; keep waiting or give up"}
+            self.actions = {**type(self).actions, "give_up_waiting": "Stop waiting: leave the bus stop, or cancel the car."}
         if self._planners:                  # only then are plans part of what a language model is told
-            cls = type(self)
-            self.role_prompt = cls.role_prompt + PLAN_PROMPT
-            self.triggers = {**cls.triggers, **PLAN_TRIGGERS}
-            self.actions = {**cls.actions, **PLAN_ACTIONS}
+            self.role_prompt = self.role_prompt + PLAN_PROMPT
+            self.triggers = {**self.triggers, **PLAN_TRIGGERS}
+            self.actions = {**self.actions, **PLAN_ACTIONS}
         return list(w.travelers)
 
     def begin_tick(self):
@@ -336,6 +342,12 @@ class TravelerKind(Kind):
                              "walk_min": minutes(plan["access_s"] + plan["egress_s"])})
                 detail["bus"] = {"time_s": plan["access_s"] + plan["wait_s"] + plan["ride_s"] + plan["egress_s"],
                                  "plan": plan}
+        if "ondemand" in sim.kinds:
+            quote = sim.kinds["ondemand"].quote(tr)
+            if quote is not None:
+                rows.append({"option": "ride", "wait_min": minutes(quote["wait_s"]), "travel_min": minutes(quote["ride_s"]),
+                             "price_usd": quote["fare"]})
+                detail["ride"] = {"time_s": quote["wait_s"] + quote["ride_s"], "quote": quote}
         if self.cfg.walk and not p.mobility_limited and tr.trip_m <= p.max_walk_m:
             walk_s = tr.trip_m / p.walk_speed
             rows.append({"option": "walk", "wait_min": 0.0, "travel_min": minutes(walk_s), "price_usd": 0.0})
@@ -371,7 +383,7 @@ class TravelerKind(Kind):
                     points.append((tr.id, "plan_review"))
             elif tr.state == TState.IN_CAR and tr.suggestion is not None:
                 points.append((tr.id, "suggestion"))
-            elif (tr.state == TState.AT_STOP and tr.next_check is not None and tick >= tr.next_check
+            elif (tr.state in (TState.AT_STOP, TState.WAITING_RIDE) and tr.next_check is not None and tick >= tr.next_check
                   and self.allows(tr.id, "cancel")):
                 points.append((tr.id, "wait_check"))
         return points
@@ -391,6 +403,8 @@ class TravelerKind(Kind):
                             {"times": review["times"]})
         if trigger in ("need", "replan"):
             rows, detail = self.options(tr)
+            if trigger == "replan" and tr.mode == "ride":      # they gave up on a car: calling again would only queue anew
+                rows = [r for r in rows if r["option"] != "ride"]
             if not rows:
                 return None
             names = [r["option"] for r in rows]
@@ -415,6 +429,14 @@ class TravelerKind(Kind):
                             [self.spec("accept_suggestion"), self.spec("decline_suggestion")],
                             Decision("accept_suggestion"))
 
+        if trigger == "wait_check" and tr.state == TState.WAITING_RIDE:      # waiting for the car they called
+            rows, _ = self.options(tr)
+            status, eta = sim.kinds["ondemand"].pickup_eta(tr)
+            context = {"waited_min": minutes((w.tick - tr.wait_start) * w.dt), "your_request": status,
+                       "pickup_eta_min": minutes(eta) if eta < float("inf") else None,
+                       "alternatives": [r for r in rows if r["option"] != "ride"]}
+            return self.obs(tr.id, trigger, state, context,
+                            [self.spec("keep_waiting"), self.spec("give_up_waiting")], Decision("keep_waiting"))
         if trigger == "wait_check":
             rows, _ = self.options(tr)
             waited = (w.tick - tr.wait_start) * w.dt
@@ -445,6 +467,11 @@ class TravelerKind(Kind):
             rec.result = sim.kinds["vehicle"].suggestion_answered(tr, action == "accept_suggestion")
         elif action == "keep_waiting":
             tr.next_check = w.tick + w.ticks(self.cfg.wait_check_seconds)
+        elif action == "give_up_waiting" and tr.state == TState.WAITING_RIDE:
+            tr.cancels += 1
+            sim.kinds["ondemand"].cancel(tr)
+            self.failed(tr, "gave up waiting for a car", "ride")
+            rec.result = "cancelled the ride request"
         elif action == "give_up_waiting":
             tr.cancels += 1
             sim.kinds["bus"].leave_stop(tr)
@@ -466,13 +493,17 @@ class TravelerKind(Kind):
             tr.bus, tr.paid = plan, tr.paid + plan["fare"]
             tr.state, tr.phase_start = TState.TO_STOP, w.tick
             tr.phase_end = w.tick + (w.ticks(plan["access_s"]) if plan["access_s"] > 0 else 0)
+        elif option == "ride":                     # call an on-demand car and wait where they are
+            sim.kinds["ondemand"].request_ride(tr, detail["ride"]["quote"])
+            tr.state, tr.wait_start = TState.WAITING_RIDE, w.tick
+            tr.next_check = w.tick + w.ticks(self.cfg.wait_check_seconds)
         else:
             tr.state, tr.phase_start = TState.WALKING, w.tick
             tr.phase_end = w.tick + w.ticks(detail["walk"]["time_s"])
         sim.emit("mode_chosen", agent=tr.id, mode=option)
 
-    def failed(self, tr, reason: str) -> None:
-        """A bus attempt ended without transport: re-plan, or fall back, or abandon."""
+    def failed(self, tr, reason: str, tried: str = "bus") -> None:
+        """An attempt by bus or on-demand car ended without transport: re-plan, or fall back, or abandon."""
         sim, w = self.sim, self.world
         if tr.wait_start is not None:
             tr.waited_ticks += w.tick - tr.wait_start
@@ -482,7 +513,7 @@ class TravelerKind(Kind):
             tr.state, tr.replan_pending = TState.DECIDING, True
             return
         rows, detail = self.options(tr)
-        names = [r["option"] for r in rows if r["option"] != "bus"]
+        names = [r["option"] for r in rows if r["option"] != tried]
         if not names:
             tr.state = TState.ABANDONED
             sim.emit("abandoned", agent=tr.id, reason=reason)
@@ -531,7 +562,8 @@ class TravelerKind(Kind):
         return net.xy(tr.origin)
 
     def frame(self):
-        shown = (TState.DECIDING, TState.TO_STOP, TState.AT_STOP, TState.EGRESS, TState.WALKING, TState.AT_ACTIVITY)
+        shown = (TState.DECIDING, TState.TO_STOP, TState.AT_STOP, TState.EGRESS, TState.WALKING, TState.AT_ACTIVITY,
+                 TState.WAITING_RIDE)
         out = []
         for tr in self.world.travelers.values():
             if tr.state in shown:

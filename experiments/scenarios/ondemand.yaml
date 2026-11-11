@@ -1,0 +1,25 @@
+# On-demand cars. Nobody owns a car: travellers call an on-demand car or walk. Most trips start in the
+# centre (a venue empties from minute 10 to 25), so cars that drop people off in the outskirts end up far from
+# the next requests. Try:
+#   agmsim run city_ondemand                                           # cars take what the service proposes (L0)
+#   agmsim run city_ondemand --set agents.ondemand.agency=L4           # cars also decide where to wait
+#   agmsim run city_ondemand --set agents.ondemand.agency=L2 --set agents.ondemand.objective=profit
+name: city_ondemand
+description: 6x6 grid, 300 travellers without cars, 50 on-demand cars; most requests come from the centre.
+simulation: {time_step_seconds: 1, duration_seconds: 3600, seed: 5}
+network:
+  type: grid
+  rows: 6
+  cols: 6
+  block_m: 400
+  speed_mps: 11
+  capacity_scale: 0.3
+demand:
+  pattern: event
+  end_seconds: 2400
+  min_trip_m: 1200
+  params: {node: 14, share: 0.6, event_start_seconds: 600, event_end_seconds: 1500}
+agents:
+  traveler: {count: 300, car_ownership: 0.0, default_mode: ride, non_llm_policy: utility, agency: L4,
+             wait_check_seconds: 120}
+  ondemand: {fleet: 50, non_llm_policy: algorithm, agency: L0, objective: balanced}

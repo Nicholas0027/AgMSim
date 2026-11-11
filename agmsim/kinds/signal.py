@@ -93,7 +93,7 @@ class SignalKind(Kind):
         w = self.world
         if self._counted != w.tick:
             on: dict = {}
-            for movers in (w.vehicles.values(), w.buses.values()):
+            for movers in (w.vehicles.values(), w.buses.values(), w.cabs.values()):
                 for m in movers:
                     if m.link is not None:
                         on[m.link] = on.get(m.link, 0) + 1

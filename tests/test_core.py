@@ -941,3 +941,75 @@ def test_lights_with_agency_cut_delay_and_the_orchestrator_needs_lights_that_lis
     assert set(header["signals"][frame["signal"][0][0]]) == {"node", "names", "from"}
     _, none = run("city_signals", [*LIGHTS, "agents.signal.junctions=[]"])
     assert "signals" not in none.metrics and trip(none) < trip(own)                                        # no junction delay at all
+
+
+# ---------------------------------------------------------------- on-demand cars
+
+CABS = ["agents.traveler.count=150", "agents.ondemand.fleet=25", "simulation.duration_seconds=3000"]
+
+
+def test_on_demand_cars_carry_travellers_who_call_them(tmp_path):
+    sim, base = run("city_ondemand", CABS)
+    w, od = sim.world, base.metrics["ondemand"]
+    assert "vehicle" not in sim.kinds and od["cars"] == 25 and od["rides"] > 100
+    reqs = list(w.requests.values())
+    assert od["requests"] == len(reqs) == od["rides"] + od["cancelled"] + sum(r.state not in ("done", "cancelled") for r in reqs)
+    done = [r for r in reqs if r.state == "done"]
+    assert all(w.travelers[r.traveler].mode == "ride" and w.travelers[r.traveler].state == TState.ARRIVED for r in done)
+    assert sum(r.fare for r in done) == pytest.approx(od["revenue_usd"], abs=0.01) == pytest.approx(sum(c.revenue for c in w.cabs.values()), abs=0.01)
+    assert base.metrics["travelers"]["mode_share"]["ride"] > 0.5 and base.metrics["outcomes"]["wait_time_s_mean"] > 30
+    assert od["pickup_wait_s_mean"] > 0 and 0 < od["empty_km_share"] < 1 and od["declined"] == od["repositions"] == 0
+    assert base.metrics["decisions"]["ondemand"]["decided"] == 0 and base.metrics["decisions"]["ondemand"]["forced"] >= od["rides"]
+    assert base.metrics["outcomes"]["vkt_km"] == pytest.approx(od["vkt_km"], abs=0.05)             # the only vehicles here
+    assert base.metrics["outcomes"]["traffic_speed_kmh"] < 11 * 3.6                               # they slow each other down
+    assert all(c.proposal is None and not c.queued for c in w.cabs.values())
+
+    # L2 with a profit objective turns poorly paid requests down; they go to another car
+    picky_sim, picky = run("city_ondemand", [*CABS, "agents.ondemand.agency=L2", "agents.ondemand.objective=profit"])
+    assert picky.metrics["ondemand"]["declined"] > 0
+    turned_down = [r for r in picky_sim.world.requests.values() if r.declined_by and r.state == "done"]
+    assert turned_down and all(r.car not in r.declined_by for r in turned_down)
+    _, serving = run("city_ondemand", [*CABS, "agents.ondemand.agency=L2", "agents.ondemand.objective=service"])
+    assert serving.metrics["ondemand"]["declined"] == 0
+    # L4 also moves while free
+    _, roaming = run("city_ondemand", [*CABS, "agents.ondemand.agency=L4", "agents.ondemand.objective=service"])
+    assert roaming.metrics["ondemand"]["repositions"] > 0 and roaming.metrics["ondemand"]["empty_km_share"] > od["empty_km_share"]
+
+    # too few cars: people give up, walk or stay; nobody is left hanging and no car is tied to a dead request
+    few_sim, few = run("city_ondemand", ["agents.traveler.count=150", "agents.ondemand.fleet=3", "simulation.duration_seconds=3000"])
+    fw = few_sim.world
+    assert few.metrics["ondemand"]["cancelled"] > 0 and few.metrics["travelers"]["gave_up_waiting"] == few.metrics["ondemand"]["cancelled"]
+    assert all(t.ride is None or fw.requests[t.ride].state in ("open", "proposed", "assigned", "on_board") for t in fw.travelers.values())
+    assert all(c.request is None or fw.requests[c.request].state in ("assigned", "on_board") for c in fw.cabs.values())
+    assert few.metrics["travelers"]["mode_share"].get("walk", 0) > base.metrics["travelers"]["mode_share"].get("walk", 0)
+    assert few.metrics["outcomes"]["wait_time_s_mean"] > base.metrics["outcomes"]["wait_time_s_mean"]
+
+    # what a car and a waiting traveller are shown
+    seen = {}
+
+    def watch(obs):
+        seen.setdefault((obs.kind, obs.trigger), obs)
+        return obs.default
+
+    run("city_ondemand", ["agents.traveler.count=150", "agents.ondemand.fleet=6", "agents.ondemand.agency=L4",
+                          "simulation.duration_seconds=2400"], policies={"ondemand": watch, "traveler": watch})
+    proposal = seen[("ondemand", "proposal")]
+    assert {"pickup_min", "trip_km", "fare_usd", "traveller_has_waited_min"} <= set(proposal.context["request"])
+    assert proposal.has("decline_request") and "your_driving_cost_usd" in proposal.context
+    assert seen[("ondemand", "idle")].has("reposition") and seen[("ondemand", "idle")].context["places"]
+    wait = seen[("traveler", "wait_check")]
+    assert wait.context["your_request"] in ("looking for a free car", "a car is on its way") and "pickup_eta_min" in wait.context
+    assert any(o["option"] == "ride" for o in seen[("traveler", "need")].context["options"])
+
+    # same seed, same run; recorded decisions replay to the same state; cars stop at traffic lights too
+    _, again = run("city_ondemand", CABS)
+    assert again.state_digest == base.state_digest and again.trace_digest == base.trace_digest
+    saved = Simulation("city_ondemand", overrides=[f"record.dir={tmp_path}", "record.run_name=cabs", *CABS,
+                                                   "agents.ondemand.agency=L4"]).run()
+    assert replay(saved.run_dir)["identical"]
+    frame = next(r for r in saved.records if r["type"] == "frame" and r["tick"] > 900)
+    assert len(frame["ondemand"]) == 25 and {row[3] for row in frame["ondemand"]} <= {"idle", "to_pickup", "occupied", "repositioning"}
+    lit_sim, lit = run("city_ondemand", [*CABS, "agents.signal.junctions=all"])
+    assert lit.metrics["signals"]["crossings"] > 0 and lit.metrics["outcomes"]["wait_time_s_mean"] > base.metrics["outcomes"]["wait_time_s_mean"]
+    mixed_sim, mixed = run("city_multimodal", ["agents.ondemand.fleet=15"])                     # next to private cars, buses, charging
+    assert mixed.metrics["ondemand"]["rides"] > 0 and {"car", "bus", "ride"} <= set(mixed.metrics["travelers"]["mode_share"])

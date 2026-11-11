@@ -138,12 +138,15 @@ def compute_metrics(sim) -> dict:
     # ---------------------------------------------------------------- outcome variables of the whole system
     # The four headline measures: what travellers wait, and how much, how long and how fast vehicles move.
     done = [t for t in travelers if t.state == TState.ARRIVED]
-    metres = sum(v.m_loaded + v.m_empty for v in w.vehicles.values()) + sum(b.m_total for b in w.buses.values())
-    seconds = sum(v.s_moving for v in w.vehicles.values()) + sum(b.s_moving for b in w.buses.values())
+    metres = (sum(v.m_loaded + v.m_empty for v in w.vehicles.values()) + sum(b.m_total for b in w.buses.values())
+              + sum(c.m_loaded + c.m_empty for c in w.cabs.values()))
+    seconds = (sum(v.s_moving for v in w.vehicles.values()) + sum(b.s_moving for b in w.buses.values())
+               + sum(c.s_moving for c in w.cabs.values()))
     out["outcomes"] = {
-        # time spent waiting for transport (at a stop), per completed trip; trips that needed no wait count as 0
+        # time spent waiting for transport (at a stop, or for a car that was called), per completed trip;
+        # trips that needed no wait count as 0
         "wait_time_s_mean": _mean(t.waited_ticks * dt for t in done),
-        "vmt_miles": round(metres / 1609.344, 2),                  # vehicle miles travelled: cars and buses
+        "vmt_miles": round(metres / 1609.344, 2),                  # vehicle miles travelled: cars, on-demand cars, buses
         "vkt_km": round(metres / 1000.0, 2),
         "vht_hours": round(seconds / 3600.0, 3),                   # vehicle hours travelled: time on the road
         "traffic_speed_mph": round(metres / 1609.344 / (seconds / 3600.0), 2) if seconds else None,   # VMT / VHT
@@ -213,6 +216,27 @@ def compute_metrics(sim) -> dict:
             "sessions_gini": gini(s.sessions for s in stations),        # how unevenly demand is spread over stations
             "price_usd_per_kwh_mean_paid": round(sum(s.revenue for s in stations) / max(1e-9, sum(s.kwh for s in stations)), 4)
             if any(s.kwh for s in stations) else 0.0,
+        }
+    if w.cabs:
+        cabs, kind = list(w.cabs.values()), sim.kinds["ondemand"]
+        loaded, empty = sum(c.m_loaded for c in cabs), sum(c.m_empty for c in cabs)
+        revenue = sum(c.revenue for c in cabs)
+        cost = (loaded + empty) / 1000.0 * cfg.agents.ondemand.operating_cost_per_km
+        out["ondemand"] = {
+            "cars": len(cabs),
+            "requests": kind.requests,
+            "rides": sum(c.trips for c in cabs),
+            "served_share": round(sum(c.trips for c in cabs) / kind.requests, 4) if kind.requests else 0.0,
+            "cancelled": kind.cancelled,                                   # the traveller gave up waiting
+            "pickup_wait_s_mean": round(kind.pickup_wait_ticks * dt / kind.pickups, 2) if kind.pickups else 0.0,
+            "declined": sum(c.declined for c in cabs),
+            "repositions": sum(c.repositions for c in cabs),
+            "reroutes": sum(c.reroutes for c in cabs),
+            "vkt_km": round((loaded + empty) / 1000.0, 2),
+            "empty_km_share": round(empty / (loaded + empty), 4) if loaded + empty else 0.0,
+            "revenue_usd": round(revenue, 2),
+            "profit_usd": round(revenue - cost, 2),
+            "rides_per_car_gini": gini(c.trips for c in cabs),             # how unevenly the work is spread over the cars
         }
     if w.signals:
         signals = list(w.signals.values())

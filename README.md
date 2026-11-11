@@ -1,8 +1,8 @@
 # AgMSim — Agentic Mobility Simulator
 
 AgMSim is a testbed for short-term mobility dynamics (seconds to minutes) in which **every kind of
-participant can be an agent**: travellers, their vehicles, buses, charging stations, traffic lights and
-the orchestrator of the network. For each kind you set, independently,
+participant can be an agent**: travellers, their private cars, on-demand cars, buses, charging stations,
+traffic lights and the orchestrator of the network. For each kind you set, independently,
 
 | Question | Setting | Examples |
 | - | - | - |
@@ -84,8 +84,8 @@ Every run reports four system-level measures under `outcomes` (they lead the res
 
 | Variable | Key | Meaning |
 | - | - | - |
-| Average waiting time | `wait_time_s_mean` | time travellers wait for transport (at a stop), per completed trip; trips without a wait count as 0 |
-| VMT | `vmt_miles` (`vkt_km`) | vehicle miles travelled by cars and buses |
+| Average waiting time | `wait_time_s_mean` | time travellers wait for transport (at a stop, or for a car they called), per completed trip; trips without a wait count as 0 |
+| VMT | `vmt_miles` (`vkt_km`) | vehicle miles travelled by private cars, on-demand cars and buses |
 | VHT | `vht_hours` | vehicle hours travelled: time cars and buses spend on the road |
 | Average traffic speed | `traffic_speed_mph` (`traffic_speed_kmh`) | VMT ÷ VHT |
 
@@ -103,7 +103,7 @@ agents were asked and decided (`decisions`, `llm`), follow them.
 | **Entity agents** | traveller, private car (agentic vehicle), bus, charging station | done |
 | | traffic lights | done: fixed-time, deciding by their own queues, or cooperating with the orchestrator |
 | | orchestrator | done as the kind `operator`: it sees the slowest roads and what waited at the lights, publishes advisories to cars, gives buses priority (also through red lights), sets a cordon charge, and asks the lights to favour a direction or to serve a queue. It does not address single cars or buses |
-| | on-demand car | not yet in this engine (an earlier version is kept in `archive/ridesourcing/`) |
+| | on-demand car | done: travellers call a car, the service proposes each request to the nearest free car, cars re-route, turn requests down and move while free according to their level. Not carried over from the earlier version in `archive/ridesourcing/`: cars setting their own price, claiming requests themselves, charging |
 | **Agency mechanism** | observation: what an agent is shown at a decision point; a vehicle's knowledge of traffic can be none, local or global | done per kind; not yet a setting of its own |
 | | memory: a language model sees its last decisions and their outcomes | partly: one fixed form (`memory: 4`) |
 | | interaction: a vehicle proposes, its owner answers; everything else passes through prices, published information and shared roads | partly: no general messages between agents |
@@ -129,12 +129,13 @@ model's recent history) belongs to its decision model, not to the environment. T
 can be replayed decision by decision to the identical state, and why the same model can be put behind any
 agent. The outcome variables are functions of the trajectory `S_0 … S_T`.
 
-## The six built-in kinds of agent
+## The seven built-in kinds of agent
 
 | Kind | L0 (non-agentic) | What agency adds |
 | - | - | - |
 | `traveler` (human) | habitual mode, follows the vehicle, waits | L1 choose mode · L2 accept/decline the vehicle's suggestions · L3 give up waiting · L4 re-plan, and change the rest of a day plan |
 | `vehicle` (private agentic vehicle, one per car-owning traveller) | route fixed at departure | L1 re-route on traffic · L2 weigh time against money for its owner · L3 propose park-and-ride to the owner · L4 manage its own charging |
+| `ondemand` (on-demand car: a fleet that carries travellers who call a car) | takes every request the service proposes, fixed route, waits where it dropped its passenger | L1 re-route on traffic · L2 weigh a proposed request against its objective and turn it down · L4 decide, while free, where to wait |
 | `bus` | leaves when boarding is done | L1 hold at stops · L2 skip a stop nobody needs |
 | `evcs` (charging station) | fixed tariff, first come first served | L1 dynamic price · L2 choose who charges next |
 | `signal` (traffic lights of a junction) | fixed-time plan | L1 keep or end a green by the queues at its own junction · L2 see the next junctions and act on what the orchestrator asks for |
@@ -300,7 +301,8 @@ where it can matter (an incident, a toll, a bottleneck with a bus lane, scarce c
 ```
 
 The `signals` experiment asks whether traffic lights need agency of their own or an orchestrator, on
-`agmsim run city_signals`. Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
+`agmsim run city_signals`; the `ondemand` experiment asks what on-demand cars that re-route, turn requests
+down or move while free do to waiting and to the fleet, on `agmsim run city_ondemand`. Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
 (`llm_alignment`, `llm_persuasion`) need a language model: `--llm qwen-local` (default), `--llm deepseek`,
 or both to compare them as arms; `--answer choice explain reason` adds the answer formats as arms.
 

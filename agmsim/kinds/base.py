@@ -98,6 +98,24 @@ class Kind:
 # --------------------------------------------------------------------------- movement
 
 
+def update_flows(sim) -> None:
+    """Congestion for this tick from where every vehicle is: a car counts once, a bus twice."""
+    w, net_cfg = sim.world, sim.cfg.network
+    if not net_cfg.congestion:
+        return
+    counts: dict = {}
+    for v in w.vehicles.values():
+        if v.link is not None:
+            counts[v.link] = counts.get(v.link, 0) + 1
+    for bus in w.buses.values():
+        if bus.link is not None:
+            counts[bus.link] = counts.get(bus.link, 0) + 2
+    for cab in w.cabs.values():
+        if cab.link is not None:
+            counts[cab.link] = counts.get(cab.link, 0) + 1
+    w.net.set_flows(counts, net_cfg.jam_spacing_m, net_cfg.capacity_scale)
+
+
 def _may_cross(line, m, gated: bool) -> bool:
     """May the mover leave this link now? Movers that have to stop wait in arrival order for the light."""
     if not gated:                       # the trip ends here, or the mover has priority: no green needed

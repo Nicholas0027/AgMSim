@@ -28,7 +28,9 @@ KEYS = """simulation.seed (integer)
 simulation.duration_seconds (number): length of the run
 agents.traveler.count (integer): number of travellers
 agents.traveler.car_ownership (0 to 1): share of travellers who own a private agentic vehicle
-agents.traveler.default_mode (car | bus | walk): how a traveller without authority travels
+agents.traveler.default_mode (car | bus | walk | ride): how a traveller without authority travels; ride means calling an on-demand car
+agents.ondemand.fleet (integer): number of on-demand cars; 0 means there are none
+agents.ondemand.objective (profit | service | balanced): what the on-demand cars are told to pursue
 agents.<kind>.agency (L0 | L1 | L2 | L3 | L4): what that kind of agent may decide; see the levels above
 agents.<kind>.use_llm (true | false): true means the kind is decided by a language model
 agents.<kind>.non_llm_policy (a built-in decision model of that kind, listed above): used when use_llm is false, and as the fallback of a language model
@@ -53,7 +55,7 @@ ANSWER = ('{"reply": "<one or two sentences for the researcher: what you set, an
 def system_prompt() -> str:
     """Stable part of the prompt: what the simulator offers and how to answer."""
     lines = ["You help a researcher set up a run of AgMSim, a mobility simulator in which every kind of agent "
-             "(travellers, their private agentic vehicles, buses, charging stations, traffic lights, and the "
+             "(travellers, their private agentic vehicles, on-demand cars, buses, charging stations, traffic lights, and the "
              "orchestrator, whose kind is named operator) has a "
              "decision model and an agency level. Turn the researcher's request into settings.", "",
              "Answer with one JSON object and nothing else:", ANSWER, "",

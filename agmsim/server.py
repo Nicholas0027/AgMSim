@@ -124,6 +124,10 @@ def agent_story(run: "Run", agent_id: str) -> dict:
     tr = w.travelers.get(agent_id)
     if tr is None and agent_id in w.vehicles:
         out["owner"] = w.vehicles[agent_id].owner
+    if agent_id in w.cabs:
+        cab = w.cabs[agent_id]
+        out["summary"] = {"rides": cab.trips, "earned_usd": round(cab.revenue, 2), "declined": cab.declined,
+                          "km_with_passenger": round(cab.m_loaded / 1000.0, 1), "km_empty": round(cab.m_empty / 1000.0, 1)}
     if tr is None:
         return out
     out["car"] = tr.car

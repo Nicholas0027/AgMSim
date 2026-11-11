@@ -323,8 +323,9 @@ class Simulation:
 
     def conditions_changed(self, notify_operator: bool = True) -> None:
         """Link conditions, or what is publicly known about them, changed."""
-        if "vehicle" in self.kinds:
-            self.kinds["vehicle"].conditions_changed()
+        for name in ("vehicle", "ondemand"):
+            if name in self.kinds:
+                self.kinds[name].conditions_changed()
         if notify_operator and self.world.operator is not None:
             self.world.operator.incident_pending = True
 
@@ -449,7 +450,8 @@ class Simulation:
         stage = {"planned": "waiting", "at_activity": "activity", "arrived": "done", "abandoned": "gave_up"}
         for t in w.travelers.values():
             people[stage.get(t.state.value, "moving")] += 1
-        ratios = [w.net.links[v.link].cur_speed / w.net.links[v.link].speed for v in w.vehicles.values() if v.link is not None]
+        ratios = [w.net.links[m.link].cur_speed / w.net.links[m.link].speed
+                  for movers in (w.vehicles.values(), w.cabs.values()) for m in movers if m.link is not None]
         return {"people": people, "on_road": len(ratios),
                 "speed": round(sum(ratios) / len(ratios), 3) if ratios else None}    # mean share of free-flow speed
 
