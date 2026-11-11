@@ -272,6 +272,9 @@ def compute_metrics(sim) -> dict:
             "toll_revenue_usd": round(w.operator.toll_revenue, 2),
         }
 
+    if any(k.share for k in sim.traffic.kinds.values()):     # how far news about slow roads travelled between agents
+        out["knowledge"] = sim.traffic.metrics()
+
     # ---------------------------------------------------------------- decisions and LLM use
     decisions = {}
     for name, s in sim.stats.items():

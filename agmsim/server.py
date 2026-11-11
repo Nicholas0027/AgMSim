@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 from . import kinds as _kinds, policies as _policies  # noqa: F401
 from . import assistant
 from .agency import LEVEL_NAMES
-from .config import LLM_PRESETS, Config, list_scenarios
+from .config import DRIVING_KINDS, LLM_PRESETS, Config, list_scenarios
 from .engine import Simulation
 from .kinds.base import KINDS
 from .llm import LLM_BACKENDS, load_env_file
@@ -162,6 +162,16 @@ def agent_story(run: "Run", agent_id: str) -> dict:
     return out
 
 
+def _knows(kcfg, kind: str) -> dict:
+    """A kind's observation, memory and interaction settings, for the form."""
+    out = {"decisions": int(kcfg.memory.decisions), "drives": kind in DRIVING_KINDS}
+    if out["drives"]:
+        out.update(traffic=kcfg.observation.traffic, radius_m=kcfg.observation.radius_m,
+                   traffic_seconds=kcfg.memory.traffic_seconds, share_traffic=bool(kcfg.interaction.share_traffic),
+                   range_m=kcfg.interaction.range_m)
+    return out
+
+
 def meta(online: bool = False) -> dict:
     """What the page needs to build its form. ``online``: the browser demo, where a visitor types their own key."""
     kinds = {}
@@ -177,7 +187,8 @@ def meta(online: bool = False) -> dict:
                            "travelers": cfg.agents.traveler.count,
                            "agents": {k: {"use_llm": getattr(cfg.agents, k).use_llm,
                                           "policy": getattr(cfg.agents, k).non_llm_policy,
-                                          "agency": getattr(cfg.agents, k).agency} for k in cfg.active_kinds()}}
+                                          "agency": getattr(cfg.agents, k).agency,
+                                          "knows": _knows(getattr(cfg.agents, k), k)} for k in cfg.active_kinds()}}
     if not online:                      # so the page can tell which hosted models are ready to use on this machine
         load_env_file()
         load_env_file(Path(__file__).resolve().parent.parent)

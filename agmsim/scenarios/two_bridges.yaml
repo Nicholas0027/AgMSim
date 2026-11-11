@@ -1,0 +1,38 @@
+# What a car knows. Two banks joined by two bridges 1.6 km apart; most trips cross from west to east. The
+# southern bridge is all but blocked from minute 10 to minute 40. Which bridge to take has to be settled long
+# before a car can see either, so what it sees, remembers and is told decides how it fares. Here the cars see
+# 900 m, remember a slow road for 10 minutes and tell each other. Try:
+#   agmsim run two_bridges
+#   agmsim run two_bridges --set agents.vehicle.interaction.share_traffic=false       # nobody tells anybody
+#   agmsim run two_bridges --set agents.vehicle.memory.traffic_seconds=0              # ... and nobody remembers
+#   agmsim run two_bridges --set agents.vehicle.observation.traffic=global            # every car knows every road
+#   agmsim run two_bridges --set agents.vehicle.observation.traffic=none              # no car knows anything
+name: two_bridges
+description: Two bridges far apart, the southern one blocked for half an hour; 400 drivers who see 900 m, remember and tell each other.
+simulation: {time_step_seconds: 2, duration_seconds: 5400, seed: 1}
+network:
+  type: bridge
+  rows: 5
+  cols: 4
+  block_m: 400
+  speed_mps: 10
+  capacity_scale: 0.5
+  params: {gap_m: 1200, bridge_rows: [0, 4]}
+demand:
+  pattern: hotspots
+  end_seconds: 3600
+  min_trip_m: 2000
+  params:
+    background_share: 0.15
+    origins: {0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1}
+    destinations: {20: 1, 21: 1, 22: 1, 23: 1, 24: 1, 25: 1, 26: 1, 27: 1, 28: 1, 29: 1, 30: 1, 31: 1, 32: 1, 33: 1, 34: 1, 35: 1, 36: 1, 37: 1, 38: 1, 39: 1}
+agents:
+  traveler: {count: 400, car_ownership: 1.0, non_llm_policy: rule, agency: L0, walk: false}
+  vehicle:
+    non_llm_policy: algorithm
+    agency: L1
+    observation: {traffic: local, radius_m: 900}     # sees the roads within 900 m: the bridge from the last road before it
+    memory: {decisions: 4, traffic_seconds: 600}     # keeps a slow road in mind for 10 minutes
+    interaction: {share_traffic: true, range_m: 500}  # cars within 500 m of each other pass on what they know
+events:
+  - {type: link_condition, at_seconds: 600, until_seconds: 2400, factor: 0.1, links: [[3, 20]]}

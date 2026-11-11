@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import re
-from collections import deque
 
 from ..actions import Decision, as_decision, validate_decision
 from ..llm import LLMBudgetExceeded, LLMRequest, LLMTransientError
@@ -22,7 +21,7 @@ from .base import Policy, register_policy
 OBS_OPEN, OBS_CLOSE = "<observation>", "</observation>"
 
 PROTOCOL = """How you are asked to decide
-- You are consulted only at decision points. Each time you receive an observation as JSON with: "trigger" (why you are asked now), "state" (your own state), "context" (what you can currently see) and "permitted_actions".
+- You are consulted only at decision points. Each time you receive an observation as JSON with: "trigger" (why you are asked now), "state" (your own state), "context" (what you can currently see), "memory" (when you have any: your own latest decisions and what came of them, oldest first) and "permitted_actions".
 - "permitted_actions" is the complete list of what you may do right now. Each entry names an action and, where relevant, its arguments with the allowed values ("choices"). Arguments marked "required": false may be left out.
 - Choose exactly one permitted action. Anything else is rejected.
 - Distances are in km, durations in minutes unless a key says otherwise, money in USD.
@@ -66,9 +65,19 @@ def build_system_prompt(kind, rationale=True) -> str:
     return "\n".join(lines)
 
 
-def build_user_prompt(obs, history=(), rationale=True) -> str:
-    """``obs`` is an Observation or its dict form (as stored in a trace)."""
+def build_user_prompt(obs, history=(), rationale=True, memory=None) -> str:
+    """``obs`` is an Observation or its dict form (as stored in a trace).
+
+    The agent's memory is part of the observation. ``memory`` shows this model fewer of its entries
+    (the latest ``memory`` ones; 0: none). ``history`` adds lines of the caller's own after the observation.
+    """
     data = obs.to_dict() if isinstance(obs, Observation) else obs
+    if memory is not None and "memory" in data:
+        data = dict(data)
+        if memory > 0:
+            data["memory"] = data["memory"][-memory:]
+        else:
+            del data["memory"]
     parts = [OBS_OPEN, json.dumps(data, ensure_ascii=False, separators=(",", ":")), OBS_CLOSE]
     if history:
         parts.append("Your recent history (oldest first):")
@@ -125,10 +134,11 @@ def parse_decision_text(text: str) -> dict:
 
 @register_policy("llm", role="any")
 class LLMPolicy(Policy):
-    """LLM-driven agent: persona and objective in the observation, short memory, validated output.
+    """LLM-driven agent: persona, objective and memory in the observation, validated output.
 
-    Parameters: ``memory`` (number of past decisions and outcomes shown, default 4),
-    ``rationale`` (true, the default: a one-sentence reason after the choice; false: the choice
+    What the agent remembers is set per kind (``agents.<kind>.memory.decisions``) and reaches every
+    decision model with the observation. Parameters: ``memory`` (show this model only its latest
+    ``memory`` entries; default: all of them), ``rationale`` (true, the default: a one-sentence reason after the choice; false: the choice
     only, which roughly halves the output tokens and so the time per decision; "first": the model
     works the options out *before* it names its choice, which costs more output tokens),
     ``system_prompt`` (replace the generated system prompt), ``extra_instructions`` (appended to
@@ -138,11 +148,11 @@ class LLMPolicy(Policy):
     concurrent = True
     uses_llm = True
 
-    def __init__(self, memory: int = 4, rationale=True, system_prompt: str | None = None,
+    def __init__(self, memory: int | None = None, rationale=True, system_prompt: str | None = None,
                  extra_instructions: str = "", **params):
         super().__init__(**params)
         self.rationale = rationale_mode(rationale)
-        self.history = deque(maxlen=max(0, int(memory)) or None) if memory else deque(maxlen=0)
+        self.memory = None if memory is None else max(0, int(memory))
         self._system_override = system_prompt
         self._extra = extra_instructions
 
@@ -160,7 +170,7 @@ class LLMPolicy(Policy):
             only = obs.actions[0]               # one permitted action, one value per argument: nothing to choose
             return Decision(only.name, {p.name: p.choices[0] for p in only.params}, "the only option",
                             {"llm": {"calls": 0, "input_tokens": 0, "output_tokens": 0, "latency_ms": 0.0, "replayed": 0}})
-        user = build_user_prompt(obs, self.history, self.rationale)
+        user = build_user_prompt(obs, (), self.rationale, self.memory)
         usage = {"calls": 0, "input_tokens": 0, "output_tokens": 0, "latency_ms": 0.0, "replayed": 0}
         decision, error, reply = None, None, ""
         try:
@@ -194,10 +204,7 @@ class LLMPolicy(Policy):
             info["rejected_reply"] = reply[:400]
         else:
             decision.info.update(info)
-        self.history.append(f"{obs.to_dict()['time']} {obs.trigger}: chose {decision.action} "
-                            f"{json.dumps(decision.args, ensure_ascii=False)}")
         return decision
 
     def feedback(self, event: dict) -> None:
         self.fallback.feedback(event)
-        self.history.append("outcome: " + json.dumps(event, ensure_ascii=False))

@@ -24,7 +24,7 @@ from ..agency import AgencySpec
 from ..entities import Cab, CState, RideRequest, TState
 from ..network import current_weight
 from ..observation import OBJECTIVES, km, minutes
-from .base import Kind, advance, path_to, register_kind, update_flows
+from .base import Kind, advance, known_eta, known_path, path_to, register_kind, update_flows
 
 FREE = (CState.IDLE, CState.REPOSITIONING)
 
@@ -34,6 +34,7 @@ class OnDemandKind(Kind):
     name = "ondemand"
     side = "machine"
     title = "On-demand car"
+    drives = True
     role_prompt = (
         "You are the on-board decision-making agent of an on-demand car: a driverless car of a ride service. "
         "Travellers call a car and the service proposes each request to the nearest free car. You carry one "
@@ -81,9 +82,12 @@ class OnDemandKind(Kind):
         cfg = self.cfg
         return round(cfg.base_fare + cfg.fare_per_km * trip_m / 1000.0 + cfg.fare_per_minute * trip_s / 60.0, 2)
 
-    def _informed(self, cab) -> bool:
-        """Does the car navigate with current traffic (its own awareness, or a public advisory)?"""
-        return self.world.advisory or self.allows(cab.id, "reroute")
+    def informed(self, cab) -> bool:
+        """Does the car navigate by what is known of traffic (its own knowledge, or a public advisory)?"""
+        return self.world.advisory or (self.sim.traffic.can_know(self.name) and self.allows(cab.id, "reroute"))
+
+    def on_the_road(self):
+        return list(self.world.cabs.values())
 
     def _available(self, cab) -> bool:
         return cab.state in FREE and cab.proposal is None
@@ -212,7 +216,7 @@ class OnDemandKind(Kind):
             req = w.requests[cab.proposal]
             pickup_m = w.distance(cab, req.origin)
             context = {
-                "request": {"pickup_min": minutes(w.eta(cab, req.origin, self._informed(cab))), "pickup_km": km(pickup_m),
+                "request": {"pickup_min": minutes(known_eta(self.sim, self, cab, req.origin)), "pickup_km": km(pickup_m),
                             "trip_min": minutes(w.net.time(req.origin, req.destination, True)), "trip_km": km(req.trip_m),
                             "fare_usd": req.fare, "traveller_has_waited_min": minutes((w.tick - req.opened) * w.dt)},
                 "your_driving_cost_usd": round(cfg.operating_cost_per_km * (pickup_m + req.trip_m) / 1000.0, 2),
@@ -227,16 +231,21 @@ class OnDemandKind(Kind):
         if trigger == "route":
             anchor, _, lead, _ = w.anchor(cab)
             remaining = self._remaining(cab)
-            current_s = w.net.route_time(remaining, current_weight)
-            best = w.net._dijkstra(anchor, current_weight, target=cab.target)[0].get(cab.target, math.inf)
+            weight, _, reports = self.sim.traffic.knowledge(self.name, cab)
+            current_s = w.net.route_time(remaining, weight)
+            best = w.net._dijkstra(anchor, weight, target=cab.target)[0].get(cab.target, math.inf)
             if anchor == cab.target or best >= current_s - cfg.min_saving_seconds:
                 return None
-            routes = w.net.alternatives(anchor, cab.target, cfg.route_alternatives, current_weight, first=remaining)
+            routes = w.net.alternatives(anchor, cab.target, cfg.route_alternatives, weight, first=remaining)
             if len(routes) < 2:
                 return None
             rows = [{"route": i, "eta_min": minutes(lead + r.time), "km": km(r.length), "is_current_route": i == 0}
                     for i, r in enumerate(routes)]
-            return self.obs(cab.id, trigger, state, {"routes": rows},
+            context = {"routes": rows}
+            basis = self.sim.traffic.explain(self.name, cab, routes, reports)
+            if basis:
+                context["traffic_knowledge"] = basis
+            return self.obs(cab.id, trigger, state, context,
                             [self.spec("choose_route", Param("route", "integer", tuple(range(len(routes)))))],
                             Decision("choose_route", {"route": 0}), {"routes": routes})
 
@@ -276,7 +285,7 @@ class OnDemandKind(Kind):
                 return
             req.state, req.car = "assigned", cab.id
             cab.state, cab.request, cab.target = CState.TO_PICKUP, req.id, req.origin
-            cab.path = path_to(w, cab, req.origin, self._informed(cab))
+            cab.path = known_path(sim, self, cab, req.origin)
             cab.next_route_check, cab.route_pending = w.tick, False
             rec.result = f"on its way to {req.traveler}"
         elif action == "choose_route":
@@ -287,7 +296,7 @@ class OnDemandKind(Kind):
                 rec.result = "switched route"
         elif action == "reposition":
             cab.state, cab.target, cab.repositions = CState.REPOSITIONING, args["node"], cab.repositions + 1
-            cab.path = path_to(w, cab, args["node"], True)
+            cab.path = known_path(sim, self, cab, args["node"])
             cab.next_route_check = w.tick + w.ticks(cfg.reroute_check_seconds)
             rec.result = f"moves to node {args['node']}"
         else:
@@ -347,7 +356,7 @@ class OnDemandKind(Kind):
             tr.state, tr.waited_ticks, tr.wait_start, tr.next_check = TState.IN_RIDE, tr.waited_ticks + now - tr.wait_start, None, None
             self.pickups, self.pickup_wait_ticks = self.pickups + 1, self.pickup_wait_ticks + now - req.opened
             cab.state, cab.target = CState.OCCUPIED, req.destination
-            cab.path = path_to(w, cab, req.destination, self._informed(cab))
+            cab.path = known_path(self.sim, self, cab, req.destination)
             cab.next_route_check, cab.route_pending = now, False
             sim.emit("picked_up", agent=tr.id, car=cab.id, tick=now)
             return

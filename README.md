@@ -56,8 +56,11 @@ What the page shows:
   form. Its proposal is checked like any configuration before it is used (`agmsim/assistant.py`); what the
   form has no control for is listed below the form and can be removed. It needs a real language model:
   on your machine a hosted model whose key is in `.env` is picked automatically, online you type a key.
+- **What they know** — for every kind, how many of its own decisions it recalls; for cars, how much of
+  traffic they see, how long they keep a slow road in mind, and whether they tell each other.
 - **Map** — agents on the network; roads darken as traffic slows, incidents are marked, and the agent
-  of the selected decision is ringed.
+  of the selected decision is ringed. For a car that sees only what is near or that talks to others, two
+  circles show how far it sees and how far it is heard.
 - **Over the run** — three charts on one time axis: travellers by stage, traffic speed as a share of
   free-flow speed, and decisions asked per time slice by kind of agent. Hover to read every series at
   that moment, click to move the map there; a table view is one click away.
@@ -104,9 +107,9 @@ agents were asked and decided (`decisions`, `llm`), follow them.
 | | traffic lights | done: fixed-time, deciding by their own queues, or cooperating with the orchestrator |
 | | orchestrator | done as the kind `operator`: it sees the slowest roads and what waited at the lights, publishes advisories to cars, gives buses priority (also through red lights), sets a cordon charge, and asks the lights to favour a direction or to serve a queue. It does not address single cars or buses |
 | | on-demand car | done: travellers call a car, the service proposes each request to the nearest free car, cars re-route, turn requests down and move while free according to their level. Not carried over from the earlier version in `archive/ridesourcing/`: cars setting their own price, claiming requests themselves, charging |
-| **Agency mechanism** | observation: what an agent is shown at a decision point; a vehicle's knowledge of traffic can be none, local or global | done per kind; not yet a setting of its own |
-| | memory: a language model sees its last decisions and their outcomes | partly: one fixed form (`memory: 4`) |
-| | interaction: a vehicle proposes, its owner answers; everything else passes through prices, published information and shared roads | partly: no general messages between agents |
+| **Agency mechanism** | observation: what an agent perceives of the current state | done: a setting of each kind. Cars see no traffic, the roads around them, or every road; what the other kinds are shown follows from their role and level |
+| | memory: what an agent carries from the past | done: a setting of each kind. Every agent is shown its own latest decisions and outcomes, whatever decides for it; cars keep slow roads in mind for a set time |
+| | interaction: what agents exchange | done: cars in range of each other pass on what they know about slow roads, next to the channels the levels open (a car proposes to its owner, the orchestrator asks the lights, advisories, prices, ride proposals). Not yet: free-text messages between any two agents |
 | **Simulation engine** | a controlled Markov process, see below | done |
 | **Interface** | web page, online demo, command line, Python | done |
 | | configuration by conversation | done (the assistant) |
@@ -124,10 +127,47 @@ step
 3. the state moves on: `S_{t+1} = F(S_t, A_t, ξ_t)`, with actions applied in a fixed order.
 
 `F` and `O_i` have no randomness of their own, so the next state depends only on the current state, the
-actions and the exogenous input — never on how the state was reached. What an agent remembers (a language
-model's recent history) belongs to its decision model, not to the environment. This is why a recorded run
-can be replayed decision by decision to the identical state, and why the same model can be put behind any
-agent. The outcome variables are functions of the trajectory `S_0 … S_T`.
+actions and the exogenous input — never on how the state was reached. What an agent carries from the past
+(its latest decisions and outcomes, the road reports it holds) is part of the state, kept by the framework
+under rules of its own (`agmsim/mechanisms.py`) and handed to the decision model with the observation; a
+decision model needs no state of its own. This is why a recorded run can be replayed decision by decision
+to the identical state, and why the same model can be put behind any agent. The outcome variables are
+functions of the trajectory `S_0 … S_T`.
+
+### What an agent has to go on: observation, memory, interaction
+
+The agency level says what a kind of agent may *do*. Three more settings of each kind say what it has to
+go on when it decides:
+
+```yaml
+agents:
+  vehicle:
+    agency: L1
+    observation: {traffic: local, radius_m: 900}      # none | local | global
+    memory: {decisions: 4, traffic_seconds: 600}
+    interaction: {share_traffic: true, range_m: 500}
+```
+
+- **Observation** — what it perceives now. `traffic` is how much of current road conditions a car sees
+  for itself: nothing, the roads within `radius_m`, or every road.
+- **Memory** — what it carries from the past. `decisions` is how many of its own latest decisions and
+  outcomes it is shown at every decision point (this one applies to every kind); `traffic_seconds` is how
+  long a slow road that a car saw or was told about stays with it.
+- **Interaction** — what it exchanges. With `share_traffic`, cars within `range_m` of each other pass on
+  what they know about slow roads, including that a road is clear again.
+
+A car reckons a road it sees at its current speed, a road it holds a report about at the reported speed,
+and every other road as free. When it learns of a slow road on the route it is following it reconsiders
+that route at once. Its observation then lists the reports its estimates rest on, each with its age and
+whether the car saw the road itself or was told. Without memory a report lasts until the next exchange
+(10 s), so a car knows what the cars in range see now and nothing of what they heard; with memory, news
+travels from car to car. The traffic settings belong to the kinds that find their own way (`vehicle`,
+`ondemand`); writing them for another kind is an error.
+
+All three are kept by the framework and not by a decision model, so a rule, an algorithm, a language
+model and a remote service behind the same kind are handed the same observation and the same memory.
+`agmsim run two_bridges` is built around them: one of two bridges far apart is blocked, and which one to
+take has to be settled before a car can see either.
 
 ## The seven built-in kinds of agent
 
@@ -337,7 +377,9 @@ where it can matter (an incident, a toll, a bottleneck with a bus lane, scarce c
 The `signals` experiment asks whether traffic lights need agency of their own or an orchestrator, on
 `agmsim run city_signals`; the `ondemand` experiment asks what on-demand cars that re-route, turn requests
 down or move while free do to waiting and to the fleet, on `agmsim run city_ondemand`; the `places`
-experiment asks whether rain, a match ending and a blocked road add up, on `agmsim run town_places`. Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
+experiment asks whether rain, a match ending and a blocked road add up, on `agmsim run town_places`; the
+`knowledge` and `knowledge_near` experiments ask what a car's sight, its memory and what other cars tell
+it are each worth, on `agmsim run two_bridges`. Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
 (`llm_alignment`, `llm_persuasion`) need a language model: `--llm qwen-local` (default), `--llm deepseek`,
 or both to compare them as arms; `--answer choice explain reason` adds the answer formats as arms.
 
@@ -401,12 +443,17 @@ def toll_averse(obs):                       # obs.trigger, obs.state, obs.contex
 
 ## Limitations
 
-- Traffic is a simple link-level speed–density model; no lanes, signals or queues spilling back.
+- Traffic is a simple link-level speed–density model with stop lines at junctions that have traffic lights;
+  no lanes, and queues do not spill back onto the road behind.
 - Day plans (activity chains) are executed and edited within one period of a day; there is no day-to-day
   learning loop yet (the `feedback` hook exists), and plans cannot be changed while travelling.
 - Bus lines are circular; park-and-ride estimates use timetable times.
-- Ride-sourcing fleets were implemented earlier and are parked in `archive/ridesourcing/` (not maintained).
+- On-demand cars do not set their own price, claim requests themselves or charge; the earlier ride-sourcing
+  code that did is parked in `archive/ridesourcing/` (not maintained).
 - The built-in non-LLM policies are simple heuristics with assumed parameters, not calibrated models.
+- Of the agency mechanisms, sight, memory for roads and car-to-car reports exist for cars only; reports
+  are always truthful and taken at face value; there are no free-text messages between agents; and no
+  experiment has yet shown a benefit of an agent recalling its own decisions.
 - The operator's action set is small. No validation against real-world data has been done.
 
 Tests: `.venv/bin/python -m pytest`. Experiments and measured results (in Chinese): `docs/EXPERIMENTS_zh.md`.

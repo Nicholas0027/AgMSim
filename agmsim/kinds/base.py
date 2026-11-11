@@ -16,10 +16,12 @@ LLM, remote, ...), and actions are applied kind by kind in a fixed order.
 """
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 from ..actions import ActionSpec, Decision, Param
 from ..agency import AgencySpec
+from ..network import current_weight, free_flow_weight
 from ..observation import Observation
 from ..registry import Registry
 
@@ -38,6 +40,7 @@ class Kind:
     triggers: dict = {}              # trigger -> explanation (used in prompts and docs)
     actions: dict = {}               # action -> explanation
     agency: Optional[AgencySpec] = None
+    drives = False                   # finds its own way through traffic (see agmsim.mechanisms.TrafficKnowledge)
 
     def __init__(self, sim):
         self.sim = sim
@@ -81,6 +84,10 @@ class Kind:
         """Compact snapshot for visualisation."""
         return []
 
+    def on_the_road(self):
+        """For kinds that drive: the entities that are out on the network now, in id order."""
+        return ()
+
     # ------------------------------------------------------------------ helpers
 
     def allows(self, agent_id: str, permission: str) -> bool:
@@ -94,7 +101,7 @@ class Kind:
         if w.environment:                    # e.g. the weather: something every agent can see for itself
             context = {**context, "environment": dict(w.environment)}
         return Observation(agent_id, self.name, w.tick, w.time_s + w.clock0, trigger, state, context,
-                           tuple(actions), default, aux or {})
+                           tuple(actions), default, aux or {}, self.sim.memories.of(agent_id))
 
 
 # --------------------------------------------------------------------------- movement
@@ -175,9 +182,35 @@ def advance(net, m, dt: float, factor: float = 1.0, own_lane: bool = False, pree
     return moved, (not m.path and m.link is None)
 
 
-def path_to(world, m, node: int, dynamic: bool = False) -> list[int]:
-    """Link sequence from the mover's position to ``node`` (finishing the current link first)."""
-    if m.link is not None:
-        link = world.net.links[m.link]
-        return [m.link] + list(world.net.route(link.v, node, dynamic).links)
-    return list(world.net.route(m.node, node, dynamic).links)
+def path_to(world, m, node: int, dynamic: bool = False, weight=None) -> list[int]:
+    """Link sequence from the mover's position to ``node`` (finishing the current link first).
+
+    The fastest route without traffic, with traffic as it is now (``dynamic``), or with the travel times
+    ``weight`` gives -- what the mover itself knows.
+    """
+    net = world.net
+    start = net.links[m.link].v if m.link is not None else m.node
+    if weight is None or weight is free_flow_weight or weight is current_weight:
+        rest = net.route(start, node, dynamic or weight is current_weight).links
+    else:
+        rest = net.fastest(start, node, weight).links
+    return ([m.link] if m.link is not None else []) + list(rest)
+
+
+def known_path(sim, kind, m, node: int) -> list[int]:
+    """The route to ``node`` that a driving agent takes: by what it knows of traffic, if it uses that at all."""
+    if not kind.informed(m):
+        return path_to(sim.world, m, node)
+    return path_to(sim.world, m, node, weight=sim.traffic.weight(kind.name, m))
+
+
+def known_eta(sim, kind, m, node: int) -> float:
+    """Seconds to ``node`` as the driving agent reckons them."""
+    w = sim.world
+    if not kind.informed(m):
+        return w.eta(m, node)
+    weight = sim.traffic.weight(kind.name, m)
+    if weight is current_weight or weight is free_flow_weight:
+        return w.eta(m, node, weight is current_weight)
+    anchor, _, lead_cur, _ = w.anchor(m)
+    return lead_cur + w.net._dijkstra(anchor, weight, target=node)[0].get(node, math.inf)

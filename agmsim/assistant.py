@@ -15,7 +15,7 @@ import json
 from typing import Optional
 
 from .agency import AgencyError, parse_agency
-from .config import LLM_PRESETS, Config, ConfigError, LLMCfg, list_scenarios
+from .config import DRIVING_KINDS, LLM_PRESETS, Config, ConfigError, LLMCfg, list_scenarios
 from .kinds.base import KINDS
 from .llm import LLMError, LLMRequest, build_llm_client
 from .network import build_network
@@ -37,7 +37,12 @@ agents.<kind>.non_llm_policy (a built-in decision model of that kind, listed abo
 agents.<kind>.mix (a list such as [{"share": 0.3, "agency": "L1"}]): that share of the kind gets other settings than the rest
 network.capacity_scale (number): road capacity; smaller means more congestion
 network.congestion (true | false): whether traffic slows roads down at all
-agents.vehicle.link_conditions (none | local | global): how much a vehicle knows about current traffic
+agents.<kind>.memory.decisions (integer, 0 for none): how many of its own latest decisions and outcomes an agent of that kind is shown when it decides
+agents.<vehicle or ondemand>.observation.traffic (none | local | global): how much of current traffic a car of that kind sees for itself; local means the roads within observation.radius_m
+agents.<vehicle or ondemand>.observation.radius_m (metres): how far a car with local observation sees
+agents.<vehicle or ondemand>.memory.traffic_seconds (seconds, 0 for none): how long a car remembers a slow road it saw or was told about
+agents.<vehicle or ondemand>.interaction.share_traffic (true | false): cars within interaction.range_m of each other tell each other about slow roads
+agents.<vehicle or ondemand>.interaction.range_m (metres): how far that reaches
 agents.bus.fare (USD), agents.evcs.price_per_kwh (USD)
 agents.signal.junctions ("all", or a list of node numbers; an empty list means no traffic lights), agents.signal.green_seconds (number): green per direction in the fixed-time plan
 agents.operator.review_seconds (number): how often the orchestrator (the kind named operator) reviews the network
@@ -113,7 +118,10 @@ def _state(scenario: str, settings: dict) -> str:
             "network.capacity_scale": cfg.network.capacity_scale, "network.congestion": cfg.network.congestion,
             "agents.traveler.car_ownership": cfg.agents.traveler.car_ownership,
             "agents.traveler.default_mode": cfg.agents.traveler.default_mode,
-            "agents.vehicle.link_conditions": cfg.agents.vehicle.link_conditions,
+            **{f"agents.{k}.{key}": value for k in cfg.active_kinds() if k in DRIVING_KINDS
+               for key, value in (("observation.traffic", getattr(cfg.agents, k).observation.traffic),
+                                  ("memory.traffic_seconds", getattr(cfg.agents, k).memory.traffic_seconds),
+                                  ("interaction.share_traffic", getattr(cfg.agents, k).interaction.share_traffic))},
             "agents.bus.fare": cfg.agents.bus.fare, "agents.evcs.price_per_kwh": cfg.agents.evcs.price_per_kwh,
             "agents.operator.initial_toll": cfg.agents.operator.initial_toll,
             "demand.start_seconds": cfg.demand_window()[0], "demand.end_seconds": cfg.demand_window()[1]}),

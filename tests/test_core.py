@@ -1096,3 +1096,106 @@ def test_a_place_that_closes_early_makes_people_look_at_their_plan():
     assert followed.metrics["plans"]["reviews"] == 0 and followed.metrics["plans"]["activities_skipped"] == 0
     assert followed.metrics["pois"]["found_closed"] > adapted.metrics["pois"]["found_closed"]
     assert adapted.metrics["plans"]["score_usd_mean"] > followed.metrics["plans"]["score_usd_mean"]
+
+
+# ---------------------------------------------------------------- agency mechanisms: observation, memory, interaction
+
+
+def test_mechanism_settings_are_written_per_kind_and_checked():
+    cfg = Config.load(SCENARIOS / "crossing.yaml", ["agents.vehicle.memory.traffic_seconds=300",
+                                                    "agents.vehicle.interaction.share_traffic=true"])
+    v = cfg.agents.vehicle
+    assert (v.observation.traffic, v.observation.radius_m) == ("local", 900)
+    assert v.memory.traffic_seconds == 300 and v.memory.decisions == 4 and v.interaction.share_traffic
+    # the earlier names of the vehicle's knowledge of traffic are still understood
+    old = Config.from_dict({"agents": {"vehicle": {"link_conditions": "none", "local_radius_m": 500}}})
+    assert (old.agents.vehicle.observation.traffic, old.agents.vehicle.observation.radius_m) == ("none", 500)
+    with pytest.raises(ConfigError, match="observation.traffic"):
+        Config.load("demo_3x3", ["agents.vehicle.observation.traffic=nearby"])
+    with pytest.raises(ConfigError, match="find their own way"):          # a bus does not choose its roads
+        Config.load("city_multimodal", ["agents.bus.interaction.share_traffic=true"])
+    with pytest.raises(ConfigError, match="negative"):
+        Config.load("demo_3x3", ["agents.traveler.memory.decisions=-1"])
+    sim = Simulation("demo_3x3", overrides=QUIET)
+    header = sim.recorder.records[0]["kinds"]
+    assert header["vehicle"]["mechanisms"]["observation"] == {"traffic": "global"}
+    assert header["traveler"]["mechanisms"] == {"memory": {"decisions": 4}}
+
+
+def test_memory_reaches_every_decision_model_with_the_observation():
+    """What an agent remembers is kept by the framework: a function, a rule and a language model get the same."""
+    seen = []
+
+    def watcher(obs):
+        seen.append((obs.agent_id, obs.memory))
+        return obs.default
+
+    ov = ["agents.vehicle.agency=L1", "agents.vehicle.memory.decisions=2"]
+    run(SCENARIOS / "incident.yaml", ov, policies={"vehicle": watcher})
+    lengths = {len(memory) for _, memory in seen}
+    assert lengths == {0, 1, 2}                               # never more than the two latest entries
+    first = next(memory for _, memory in seen if memory)[0]
+    assert first["did"] == "choose_route" and first["trigger"] == "route" and "at" in first
+    seen.clear()
+    run(SCENARIOS / "incident.yaml", ["agents.vehicle.agency=L1", "agents.vehicle.memory.decisions=0"],
+        policies={"vehicle": watcher})
+    assert seen and all(memory == () for _, memory in seen)
+    # outcomes are remembered too, and a language model reads the memory as part of its observation
+    from agmsim.policies.llm_policy import build_user_prompt
+    _, res = run(SCENARIOS / "incident.yaml", ["agents.vehicle.agency=L1", "agents.vehicle.use_llm=true", "llm.backend=mock"])
+    shown = [r["obs"] for r in res.records if r.get("type") == "decision" and r["kind"] == "vehicle" and "obs" in r]
+    remembered = next(o for o in shown if o.get("memory"))
+    assert '"memory":[{"at"' in build_user_prompt(remembered)
+    assert '"memory"' not in build_user_prompt(remembered, memory=0)
+    travellers, _ = run()
+    assert any(item.get("outcome") == "trip_completed" for t in travellers.world.travelers
+               for item in travellers.memories.of(t))
+
+
+def test_what_a_car_knows_follows_from_what_it_sees_remembers_and_is_told():
+    """One bridge is blocked. Cars that see only what is near find out at the bridge; memory keeps them from
+    going back to it, and cars that talk to each other find out before they get there."""
+    V = "agents.vehicle."
+
+    def crossing(*overrides):
+        return run(SCENARIOS / "crossing.yaml", list(overrides))[1]
+
+    def basis(res):
+        """What the cars' estimates rested on, wherever they did not see for themselves."""
+        found = [r["obs"]["context"]["traffic_knowledge"] for r in res.records
+                 if r.get("type") == "decision" and r["kind"] == "vehicle" and "traffic_knowledge" in r["obs"]["context"]]
+        return found, [row for b in found for row in b["reports_about_roads_you_do_not_see"]]
+
+    runs = {"near": crossing(), "blind": crossing(V + "observation.traffic=none"),
+            "everything": crossing(V + "observation.traffic=global"),
+            "remembering": crossing(V + "memory.traffic_seconds=600"),
+            "told": crossing(V + "memory.traffic_seconds=600", V + "interaction.share_traffic=true")}
+    m = {name: res.metrics for name, res in runs.items()}
+    time = {name: metrics["travelers"]["trip_time_s_mean"] for name, metrics in m.items()}
+    assert time["blind"] > time["near"] > time["remembering"] > time["told"] > time["everything"]
+    assert m["blind"]["vehicles"]["reroutes"] == 0            # nothing to go on: the level alone does nothing
+    assert m["remembering"]["vehicles"]["reroutes"] < m["near"]["vehicles"]["reroutes"]   # no going back to the blocked bridge
+    assert "knowledge" not in m["near"] and m["told"]["knowledge"]["reports_heard"] > 0
+    assert 0 < m["told"]["knowledge"]["share_of_agents_that_heard"] <= 1
+    # a report is about a road the car does not see itself, and says how old it is and where it came from
+    assert basis(runs["near"]) == ([], []) and basis(runs["everything"]) == ([], [])
+    found, rows = basis(runs["remembering"])
+    assert rows and {row["source"] for row in rows} == {"seen earlier"}
+    found, rows = basis(runs["told"])
+    assert "told by another vehicle" in {row["source"] for row in rows}
+    assert all(0 < row["speed_pct_of_normal"] <= 100 and row["age_min"] <= 10 for row in rows)
+    assert any(row["speed_pct_of_normal"] == 100 for row in rows)      # "the bridge is clear again" gets around too
+    assert all(b["you_see_roads_within_km"] == 0.9 for b in found)
+
+
+def test_without_memory_a_report_does_not_outlive_the_exchange_it_came_in():
+    from agmsim.mechanisms import PERIOD_SECONDS
+    V = "agents.vehicle."
+    sim = Simulation(SCENARIOS / "crossing.yaml", overrides=[*QUIET, V + "interaction.share_traffic=true"])
+    period = sim.world.ticks(PERIOD_SECONDS)
+    while sim.step():
+        if sim.world.tick > 600 and sim.traffic.reports and sim.world.tick % period == 1:
+            newest = max(report[1] for store in sim.traffic.reports.values() for report in store.values())
+            assert all(report[1] == newest for v in sim.kinds["vehicle"].on_the_road()
+                       for report in sim.traffic.reports.get(v.id, {}).values())
+    assert sim.traffic.metrics()["reports_heard"] > 0

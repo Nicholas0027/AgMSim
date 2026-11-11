@@ -1,0 +1,30 @@
+# Two banks joined by two bridges 1.6 km apart. Most trips cross from west to east. The southern bridge is
+# all but blocked for half an hour: which bridge to take has to be settled well before a car can see either.
+name: exp_crossing
+description: Two bridges far apart, one blocked for a while; what does a car have to know, remember and be told?
+simulation: {time_step_seconds: 2, duration_seconds: 5400, seed: 1}
+network:
+  type: bridge
+  rows: 5
+  cols: 4
+  block_m: 400
+  speed_mps: 10
+  capacity_scale: 0.5
+  params: {gap_m: 1200, bridge_rows: [0, 4]}
+demand:
+  pattern: hotspots
+  end_seconds: 3600
+  min_trip_m: 2000
+  params:
+    background_share: 0.15
+    origins: {0: 1, 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1, 8: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1}
+    destinations: {20: 1, 21: 1, 22: 1, 23: 1, 24: 1, 25: 1, 26: 1, 27: 1, 28: 1, 29: 1, 30: 1, 31: 1, 32: 1, 33: 1, 34: 1, 35: 1, 36: 1, 37: 1, 38: 1, 39: 1}
+agents:
+  traveler: {count: 400, car_ownership: 1.0, non_llm_policy: rule, agency: L0, walk: false}
+  vehicle:
+    non_llm_policy: algorithm
+    agency: L1
+    observation: {traffic: local, radius_m: 900}     # a car sees the bridge from the last road before it
+events:
+  - {type: link_condition, at_seconds: 600, until_seconds: 2400, factor: 0.1, links: [[3, 20]]}
+record: {dir: null}

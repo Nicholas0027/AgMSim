@@ -3,8 +3,10 @@
 One tick advances the state by ``S_{t+dt} = F(S_t, A_t, xi_t)`` in a fixed,
 documented order:
 
-1. exogenous events (interventions, new trip needs);
-2. every agent that has a decision point observes the **same** state ``S_t``;
+1. exogenous events (interventions, new trip needs); driving agents with memory take note of the
+   roads around them and exchange reports (see :mod:`agmsim.mechanisms`);
+2. every agent that has a decision point observes the **same** state ``S_t``, within what its kind's
+   observation, memory and interaction settings let it know;
 3. decisions are produced -- by the agent's decision model where its agency
    gives it a say, by the default action where it does not;
 4. actions are validated and applied kind by kind (operator, charging
@@ -32,6 +34,7 @@ from .agency import parse_agency
 from .config import Config, LLMCfg
 from .kinds.base import KINDS
 from .llm import build_llm_client
+from .mechanisms import Memories, TrafficKnowledge
 from .network import build_network
 from .observation import Observation
 from .plans import hhmm, parse_clock
@@ -163,6 +166,8 @@ class Simulation:
                                                  getattr(kcfg, "objective", ""), non_llm, g)
         for agent_id, spec in self.specs.items():
             self.policies[agent_id] = self._make_policy(agent_id, spec)
+        self.memories = Memories(self)              # each agent's latest decisions and outcomes
+        self.traffic = TrafficKnowledge(self)       # what each driving agent knows about the roads
         # simultaneous model calls within one decision phase: what the configured backends allow
         self._concurrency = max([c.cfg.max_concurrency for c in self._llm_clients.values()], default=1)
         self._recording = self.recorder.active
@@ -313,10 +318,25 @@ class Simulation:
             "kinds": {name: {"side": k.side, "title": k.title, "count": sum(1 for s in self.specs.values() if s.kind == name),
                              "agency": next((self.agency[a].to_dict() for a, s in self.specs.items() if s.kind == name), None),
                              "policy": next((s.policy for s in self.specs.values() if s.kind == name), None),
-                             "use_llm": bool(getattr(self.cfg.agents, name).use_llm)}
+                             "use_llm": bool(getattr(self.cfg.agents, name).use_llm),
+                             "mechanisms": self._mechanisms(name)}
                       for name, k in self.kinds.items()},
             "update_order": UPDATE_ORDER,
         }
+
+    def _mechanisms(self, name: str) -> dict:
+        """The kind's observation, memory and interaction settings, as far as they apply to it."""
+        kcfg = getattr(self.cfg.agents, name)
+        out = {"memory": {"decisions": int(kcfg.memory.decisions)}}
+        if self.kinds[name].drives:
+            out["observation"] = {"traffic": kcfg.observation.traffic}
+            if kcfg.observation.traffic == "local":
+                out["observation"]["radius_m"] = kcfg.observation.radius_m
+            out["memory"]["traffic_seconds"] = kcfg.memory.traffic_seconds
+            out["interaction"] = {"share_traffic": bool(kcfg.interaction.share_traffic)}
+            if kcfg.interaction.share_traffic:
+                out["interaction"]["range_m"] = kcfg.interaction.range_m
+        return out
 
     # ------------------------------------------------------------------ services for kinds
 
@@ -332,7 +352,8 @@ class Simulation:
         self._tick_records.append(DecisionRecord(self.world.tick, agent_id, kind, trigger, "forced", None, decision, note=note))
 
     def feedback(self, agent_id: str, event: dict) -> None:
-        """Deliver an outcome to the agent's decision model (for memory and learning)."""
+        """An outcome that concerns the agent: it goes into its memory and to its decision model (for learning)."""
+        self.memories.outcome(agent_id, event)
         policy = self.policies.get(agent_id)
         if policy is not None:
             policy.feedback(event)
@@ -357,6 +378,7 @@ class Simulation:
             self._apply_intervention(item)
         for kind in self.kinds.values():
             kind.begin_tick()
+        self.traffic.update()
 
         # 2. observe: every due agent sees the same state
         records: list[DecisionRecord] = []
@@ -406,6 +428,8 @@ class Simulation:
                 stats["exercised"] += int(not rec.decision.same_choice(rec.default))
                 stats["fallback"] += int("fallback" in rec.decision.info)
             self.kinds[rec.kind].apply(rec)
+            if rec.source != "forced":
+                self.memories.decided(rec)
 
         # 5-6. settle interactions, then physics
         for kind in self.kinds.values():

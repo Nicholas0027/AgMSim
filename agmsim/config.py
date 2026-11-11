@@ -71,6 +71,33 @@ class DemandCfg:
 # --------------------------------------------------------------------------- agents
 
 
+DRIVING_KINDS = ("vehicle", "ondemand")     # kinds that find their own way through traffic
+
+
+@dataclass
+class ObservationCfg:
+    """What an agent perceives of the current state."""
+
+    traffic: str = "global"             # road conditions it knows as they are now: none | local | global
+    radius_m: float = 800.0             # 'local': roads within this distance of where it is
+
+
+@dataclass
+class MemoryCfg:
+    """What an agent carries from the past."""
+
+    decisions: int = 4                  # its own latest decisions and outcomes, shown at every decision (0: none)
+    traffic_seconds: float = 0.0        # how long a road condition it saw or was told about stays with it
+
+
+@dataclass
+class InteractionCfg:
+    """What an agent exchanges with other agents, beyond what its level lets it do."""
+
+    share_traffic: bool = False         # pass on what it knows about slow roads to agents within range_m that do the same
+    range_m: float = 500.0
+
+
 @dataclass
 class AgentCfg:
     """Settings shared by every kind of agent."""
@@ -83,6 +110,10 @@ class AgentCfg:
     agency: Any = "L0"                  # level name, list of permissions, or mapping of can_* flags
     llm: Optional[dict] = None          # per-kind override of the top-level ``llm`` block
     mix: list = field(default_factory=list)  # sub-populations: [{share: 0.3, agency: L1, use_llm: ..., non_llm_policy: ...}]
+    # The agency mechanisms. They are kept by the framework, so every decision model is handed the same.
+    observation: ObservationCfg = field(default_factory=ObservationCfg)
+    memory: MemoryCfg = field(default_factory=MemoryCfg)
+    interaction: InteractionCfg = field(default_factory=InteractionCfg)
 
 
 @dataclass
@@ -129,8 +160,6 @@ class VehicleCfg(AgentCfg):
     reroute_check_seconds: float = 120.0  # how often a driving vehicle may reconsider its route
     min_saving_seconds: float = 30.0    # a faster alternative must save at least this much to be worth asking about
     route_alternatives: int = 3
-    link_conditions: str = "global"     # the vehicle's knowledge of real-time link speeds: none | local | global
-    local_radius_m: float = 800.0       # range of 'local' knowledge
     battery: BatteryCfg = field(default_factory=BatteryCfg)
 
 
@@ -398,7 +427,18 @@ class Config:
         self.llm.resolved()     # rejects an unknown llm.preset
         _choice("agents.traveler.default_mode", self.agents.traveler.default_mode, ("car", "bus", "walk", "ride"))
         _choice("agents.ondemand.objective", self.agents.ondemand.objective, ("profit", "service", "balanced"))
-        _choice("agents.vehicle.link_conditions", self.agents.vehicle.link_conditions, ("none", "local", "global"))
+        for kind in KIND_ORDER:
+            k, path = getattr(self.agents, kind), f"agents.{kind}"
+            _choice(f"{path}.observation.traffic", k.observation.traffic, ("none", "local", "global"))
+            if k.observation.radius_m <= 0 or k.interaction.range_m <= 0:
+                raise ConfigError(f"{path}.observation.radius_m and {path}.interaction.range_m must be positive")
+            if int(k.memory.decisions) < 0 or k.memory.traffic_seconds < 0:
+                raise ConfigError(f"{path}.memory.decisions and {path}.memory.traffic_seconds must not be negative")
+            if kind not in DRIVING_KINDS and (k.observation.traffic != "global" or k.memory.traffic_seconds > 0
+                                              or k.interaction.share_traffic):
+                raise ConfigError(
+                    f"{path}: observation.traffic, memory.traffic_seconds and interaction.share_traffic are settings "
+                    f"of the kinds that find their own way through traffic ({', '.join(DRIVING_KINDS)})")
         for item in self.interventions:
             if not isinstance(item, dict) or item.get("type") not in EVENT_TYPES:
                 raise ConfigError(f"each external event needs a 'type' out of {list(EVENT_TYPES)}")
@@ -443,6 +483,14 @@ def _expand_aliases(data: dict) -> dict:
         for kind in MACHINE_KINDS:
             agents[kind] = {**shared, **agents.get(kind, {})}
         agents["vehicle"] = {**machine, **agents["vehicle"]}
+    vehicle = agents.get("vehicle")
+    if vehicle:                             # earlier names of the vehicle's knowledge of traffic
+        seen = dict(vehicle.get("observation") or {})
+        for name, key in (("link_conditions", "traffic"), ("local_radius_m", "radius_m")):
+            if name in vehicle:
+                seen.setdefault(key, vehicle.pop(name))
+        if seen:
+            vehicle["observation"] = seen
     if agents:
         data["agents"] = agents
     if "events" in data:                    # the scenario's external events, under their other name (it wins)

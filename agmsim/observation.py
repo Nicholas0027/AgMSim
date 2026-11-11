@@ -8,6 +8,7 @@ agent. It states
 * ``trigger`` -- why the agent is being asked now;
 * ``state``   -- the agent's own state (persona, objective, position, ...);
 * ``context`` -- trigger-specific information within the agent's observation scope;
+* ``memory``  -- the agent's own latest decisions and what came of them;
 * ``actions`` -- the actions the agent is permitted to take right now.
 """
 from __future__ import annotations
@@ -51,6 +52,7 @@ class Observation:
     actions: tuple
     default: Decision
     aux: dict = field(default_factory=dict, repr=False)   # engine-private; never shown to decision models
+    memory: tuple = ()            # the agent's latest decisions and outcomes, oldest first (kept by the framework)
 
     def has(self, action: str) -> bool:
         return any(spec.name == action for spec in self.actions)
@@ -82,10 +84,10 @@ class Observation:
         first = actions[0]
         default = Decision(first.name, {p.name: p.choices[0] for p in first.params if p.choices and p.required})
         return cls(data["agent_id"], data["kind"], data["tick"], float(data.get("time_s", 0.0)), data["trigger"],
-                   data["state"], data["context"], tuple(actions), default)
+                   data["state"], data["context"], tuple(actions), default, memory=tuple(data.get("memory", ())))
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "agent_id": self.agent_id,
             "kind": self.kind,
             "time": clock(self.time_s),
@@ -93,8 +95,11 @@ class Observation:
             "trigger": self.trigger,
             "state": self.state,
             "context": self.context,
-            "permitted_actions": [spec.to_dict() for spec in self.actions],
         }
+        if self.memory:
+            out["memory"] = list(self.memory)
+        out["permitted_actions"] = [spec.to_dict() for spec in self.actions]
+        return out
 
     def digest(self) -> str:
         blob = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"), default=str)

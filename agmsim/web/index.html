@@ -41,6 +41,10 @@ th{color:var(--muted);font-weight:500;font-size:12px}td.num{text-align:right;fon
 #agents td:first-child{font-weight:600;white-space:nowrap}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;flex:none}
 .fb{margin-top:4px;color:var(--ink2);font-size:11.5px}.fb select{width:auto;padding:2px 4px}
+#know td:first-child{font-weight:600;white-space:nowrap}#know select,#know input{padding:4px 5px;font-size:12px}#know input{width:3.6em}
+#know td.sub{font-weight:400;white-space:normal;padding-top:0}
+#know .trio{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 6px 14px}#know .trio label{flex:1 1 92px;min-width:0;margin:0;font-size:11.5px;display:flex;flex-direction:column;gap:2px}
+#know td.num{color:var(--ink2);font-size:12px;text-align:left}
 #llmsec{display:none}#llmnote{margin-top:6px}
 #chat{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:5px}
 .msg{padding:6px 9px;border-radius:9px;max-width:94%;font-size:12.5px;overflow-wrap:anywhere}
@@ -119,6 +123,9 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
   <table id="agents"><thead><tr><th>Kind</th><th>Decided by</th><th>Agency</th></tr></thead><tbody></tbody></table>
   <div class="note" style="margin-top:6px">Every kind of agent is decided by one model: a built-in one, or a language model (LLM). Agency sets what it is allowed to decide.</div>
   <div class="note muted" id="levelnote" style="margin-top:4px"></div>
+  <h2>What they know <span class="plain">memory, observation, interaction</span></h2>
+  <table id="know"><thead><tr><th>Kind</th><th title="How many of its own latest decisions and outcomes it is shown when it decides">Recalls its last</th></tr></thead><tbody></tbody></table>
+  <div class="note" style="margin-top:6px">Agency says what a kind may decide; this says what it has to go on. Every decision model of a kind is handed the same. Kinds that find their own way through traffic also have a sight, a memory for slow roads, and other cars to hear from.</div>
   <div id="extras"></div>
   <div id="llmsec">
     <h2>Language model <span class="plain">for the assistant and the kinds decided by LLM</span></h2>
@@ -225,6 +232,17 @@ function agentRows(){
       <div class="fb">if its reply is unusable: <select data-k="${k}" data-f="fallback" aria-label="${k} fallback">${pol.map(p=>`<option ${p===a.policy?'selected':''}>${p}</option>`).join('')}</select></div></td>
     <td><select data-k="${k}" data-f="agency" aria-label="${k} agency level">${Object.keys(kd.levels).map(l=>`<option ${l===lvl?'selected':''} title="${kd.levels[l].join(', ')||'no authority'}">${l}</option>`).join('')}</select></td>`}
   tb.querySelectorAll('select[data-f=model]').forEach(e=>e.onchange=llmSection); llmSection();
+  const kb=$('know').tBodies[0]; kb.textContent='';                 // what each kind has to go on
+  for(const k of sc.kinds){const m=sc.agents[k].knows, tr=kb.insertRow(), opt=(v,t,cur)=>`<option value="${v}" ${String(v)===String(cur)?'selected':''}>${t}</option>`;
+    tr.innerHTML=`<td><span class="dot" style="background:${kindColor(k)}"></span>${label(k)}</td>
+    <td class="num"><input type="number" min="0" max="20" value="${m.decisions}" data-k="${k}" data-f="decisions" aria-label="${k}: own decisions recalled"> decisions</td>`;
+    if(!m.drives)continue;
+    const keep=[...new Set([0,120,600,1800,m.traffic_seconds||0])].sort((a,b)=>a-b), sub=kb.insertRow();
+    sub.innerHTML=`<td colspan="2" class="sub"><div class="trio">
+      <label title="How much of current traffic it sees for itself">Sees traffic<select data-k="${k}" data-f="traffic">${opt('none','nothing',m.traffic)}${opt('local',`${m.radius_m} m around`,m.traffic)}${opt('global','every road',m.traffic)}</select></label>
+      <label title="How long a slow road it saw or was told about stays with it">Keeps it<select data-k="${k}" data-f="keep">${keep.map(x=>opt(x,x?(x%60?x+' s':x/60+' min'):'not at all',m.traffic_seconds)).join('')}</select></label>
+      <label title="Cars in range of each other pass on what they know about slow roads">Tells others<select data-k="${k}" data-f="share">${opt('false','nobody',m.share_traffic)}${opt('true',`within ${m.range_m} m`,m.share_traffic)}</select></label></div></td>`}
+  kb.querySelectorAll('[data-f]').forEach(e=>e.onchange=()=>{delete extra[`agents.${e.dataset.k}.${KNOW_KEY[e.dataset.f]}`]; renderExtras()});
   tb.querySelectorAll('select[data-f=agency]').forEach(e=>e.onchange=()=>{delete extra[`agents.${e.dataset.k}.agency`]; renderExtras()});
   $('levelnote').textContent=Object.entries(meta.level_names).map(([k,v])=>`${k} ${v}`).join(' · ');
 }
@@ -245,10 +263,14 @@ function backendFields(){
     :`The key stays in this browser tab and is sent only to ${preset?preset.base_url:'the address above'}. It is not saved anywhere. Calls are made one at a time, so a run takes minutes, and they are billed to your key.`;
 }
 const control=(k,f)=>document.querySelector(`#agents select[data-f=${f}][data-k="${k}"]`);
+const KNOW_KEY={decisions:'memory.decisions',traffic:'observation.traffic',keep:'memory.traffic_seconds',share:'interaction.share_traffic'};
+const knowControl=(k,f)=>document.querySelector(`#know [data-f=${f}][data-k="${k}"]`);
 function formSettings(){                    // everything the form sets now, as {key: value}; what the assistant added on top wins
   const out={'simulation.seed':+$('seed').value,'agents.traveler.count':+$('count').value};
   document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const k=e.dataset.k, on=e.value==='llm';
     out[`agents.${k}.use_llm`]=on; out[`agents.${k}.non_llm_policy`]=on?control(k,'fallback').value:e.value; out[`agents.${k}.agency`]=control(k,'agency').value});
+  document.querySelectorAll('#know [data-f]').forEach(e=>{const f=e.dataset.f;
+    out[`agents.${e.dataset.k}.${KNOW_KEY[f]}`]=f==='traffic'?e.value:f==='share'?e.value==='true':Math.max(0,+e.value||0)});
   return {...out,...extra};
 }
 async function llmSpec(){                   // the chosen language model; in the online demo the visitor's key is handed over first (see agmsim/browser.py)
@@ -288,18 +310,27 @@ async function poll(){
 function renderChat(waiting){const host=$('chat'); host.textContent='';
   for(const m of chat)host.append(el('div','msg '+(m.role==='user'?'me':'it')+(m.err?' err':''),m.text));
   if(waiting)host.append(el('div','msg it','…')); host.scrollTop=host.scrollHeight}
-function renderExtras(){const host=$('extras'); host.textContent=''; const keys=Object.keys(extra); if(!keys.length)return;
+function renderExtras(){const host=$('extras'); host.textContent=''; const keys=Object.keys(extra);
+  for(const [k,a] of Object.entries(meta.scenarios[$('scenario').value].agents)){if(!a.knows.drives)continue;      // distances the assistant changed show in the choices
+    const see=knowControl(k,'traffic'), tell=knowControl(k,'share'), r=extra[`agents.${k}.observation.radius_m`]??a.knows.radius_m, t=extra[`agents.${k}.interaction.range_m`]??a.knows.range_m;
+    if(see)see.querySelector('option[value=local]').textContent=`${r} m around`; if(tell)tell.querySelector('option[value=true]').textContent=`within ${t} m`}
+  if(!keys.length)return;
   const wrap=el('div','chips'); host.append(el('div','note','Also set, from the assistant (click to remove):'),wrap);
   for(const k of keys){const v=extra[k], b=el('button','chip',(Array.isArray(v)?`${k}: ${v.length} ${v.length===1?'entry':'entries'}`:`${k} = ${typeof v==='object'?JSON.stringify(v):v}`)+' ×');
     b.title=JSON.stringify(v); b.onclick=()=>{delete extra[k]; renderExtras()}; wrap.append(b)}}
 function applySettings(scenario,set){        // a proposal goes into the form where the form has a control, and is listed below it where it has none
   if(scenario&&scenario!==$('scenario').value&&meta.scenarios[scenario]){$('scenario').value=scenario; extra={}; agentRows()}
-  for(const [k,v] of Object.entries(set||{}).sort()){const m=k.match(/^agents\.(\w+)\.(agency|non_llm_policy|use_llm)$/);
+  for(const [k,v] of Object.entries(set||{}).sort()){const m=k.match(/^agents\.(\w+)\.(agency|non_llm_policy|use_llm)$/); let km;
     if(k==='simulation.seed')$('seed').value=v; else if(k==='agents.traveler.count')$('count').value=v;
     else if(m&&control(m[1],'model')){const md=control(m[1],'model'), fb=control(m[1],'fallback'), ag=control(m[1],'agency');
       if(m[2]==='agency'){if(typeof v==='string'&&[...ag.options].some(o=>o.value===v)){ag.value=v; delete extra[k]} else extra[k]=v}
       else if(m[2]==='non_llm_policy'){fb.value=v; if(md.value!=='llm')md.value=v}
       else md.value=v?'llm':fb.value}
+    else if(km=k.match(/^agents\.(\w+)\.(memory\.decisions|observation\.traffic|memory\.traffic_seconds|interaction\.share_traffic)$/)){
+      const f=Object.keys(KNOW_KEY).find(x=>KNOW_KEY[x]===km[2]), c=knowControl(km[1],f);
+      if(!c){extra[k]=v; continue}
+      if(f==='keep'&&![...c.options].some(o=>+o.value===+v))c.add(new Option(v%60?v+' s':v/60+' min',v));
+      c.value=String(v); delete extra[k]}
     else extra[k]=v}
   llmSection(); renderExtras();
 }
@@ -479,6 +510,7 @@ function renderMetrics(m){
     tiles.push(['People late',String(P.people_late),`of ${P.people} · ${P.late_min_mean.toFixed(2)} min each on average`]);
     tiles.push(['Plans changed',String(P.edits),`in ${P.reviews} reviews of the day`])}
   if(V&&V.trips)tiles.push(['Car time ÷ free-flow time','×'+V.travel_time_ratio.toFixed(2),`${V.reroutes} re-routes`]);
+  if(m.knowledge)tiles.push(['Road reports passed on',m.knowledge.reports_heard.toLocaleString(),`${Math.round(m.knowledge.share_of_agents_that_heard*100)}% of the cars heard of a slow road from another car`]);
   const asked=Object.values(m.decisions).reduce((a,d)=>a+d.decided,0), usedAll=Object.values(m.decisions).reduce((a,d)=>a+d.exercised,0);
   if(L.calls||L.replayed)tiles.push(['Model calls',String(L.calls),`${L.fallbacks} fell back to a built-in model`]);
   else tiles.push(['Decisions asked',String(asked),`${usedAll} used their authority`]);
@@ -539,7 +571,7 @@ function draw(){
   g.font='10.5px system-ui';
   for(const stops of Object.values(header.lines||{}))for(const n of stops){const p=P(...nodes[n]); g.beginPath(); g.arc(p[0],p[1],6,0,7); g.strokeStyle=theme.bus; g.lineWidth=1.5; g.stroke()}
   for(const st of fr.evcs||[]){const p=P(...nodes[st[1]]); g.fillStyle=theme.evcs; g.beginPath(); g.roundRect(p[0]-7,p[1]-7,14,14,3); g.fill(); g.fillStyle=theme.ink2; g.fillText(`${st[0]} $${st[2]} ${st[3]}/${st[5]}+${st[4]}`,p[0],p[1]-11)}
-  const who=story&&story.decision?[story.id,story.car,story.owner]:[]; let mark=null;
+  const who=story&&story.decision?[story.id,story.car,story.owner]:[]; let mark=null, markKind=null;
   for(const t of fr.traveler||[]){const p=P(t[1],t[2]), rest=t[3]==='at_activity';
     if(rest){let k=7; for(const c of t[0])k=(k*31+c.charCodeAt(0))%997; p[0]+=(k%7-3)*3; p[1]+=(Math.floor(k/7)%7-3)*3}   // spread people who are at the same place
     g.beginPath(); g.arc(p[0]+(rest?0:3),p[1]-(rest?0:3),rest?2.3:3,0,7); g.fillStyle=rest?theme.rest:theme.move; g.fill(); if(who[0]===t[0])mark=p}
@@ -547,13 +579,18 @@ function draw(){
     if(state==='parked'){g.arc(p[0],p[1],2.2,0,7); g.fillStyle=theme.parked; g.fill()}
     else if(state==='driving'){g.arc(p[0],p[1],4,0,7); g.fillStyle=theme.vehicle; g.fill(); g.strokeStyle=theme.surface; g.lineWidth=1.5; g.stroke()}
     else{g.arc(p[0],p[1],3.6,0,7); g.strokeStyle=theme.vehicle; g.lineWidth=2; g.stroke()}
-    if(who.includes(v[0]))mark=p}
+    if(who.includes(v[0])){mark=p; markKind='vehicle'}}
   for(const c of fr.ondemand||[]){const p=P(c[1],c[2]); g.beginPath();        // filled while it carries someone, a ring otherwise
     if(c[3]==='occupied'){g.arc(p[0],p[1],4,0,7); g.fillStyle=theme.ondemand; g.fill(); g.strokeStyle=theme.surface; g.lineWidth=1.5; g.stroke()}
     else{g.arc(p[0],p[1],3.4,0,7); g.strokeStyle=theme.ondemand; g.lineWidth=c[3]==='to_pickup'?2.4:1.5; g.stroke()}
-    if(who.includes(c[0]))mark=p}
+    if(who.includes(c[0])){mark=p; markKind='ondemand'}}
   for(const b of fr.bus||[]){const p=P(b[1],b[2]); g.fillStyle=theme.bus; g.beginPath(); g.roundRect(p[0]-9,p[1]-6,18,12,3); g.fill(); g.fillStyle='#fff'; g.fillText(b[4],p[0],p[1]+3.5)}
-  if(mark){g.beginPath(); g.arc(mark[0],mark[1],10,0,7); g.strokeStyle=theme.ink; g.lineWidth=1.5; g.stroke(); g.fillStyle=theme.ink; g.fillText(story.decision.agent,mark[0],mark[1]-14)}
+  if(mark){g.beginPath(); g.arc(mark[0],mark[1],10,0,7); g.strokeStyle=theme.ink; g.lineWidth=1.5; g.stroke(); g.fillStyle=theme.ink; g.fillText(story.decision.agent,mark[0],mark[1]-14);
+    const km=markKind&&((header.kinds[markKind]||{}).mechanisms||{}), see=km&&km.observation&&km.observation.radius_m, tell=km&&km.interaction&&km.interaction.range_m;
+    g.lineWidth=1; g.strokeStyle=theme.ink2; g.fillStyle=theme.ink2; g.font='10px system-ui';      // how far this car sees (dashed) and how far it is heard (dotted)
+    if(see){g.setLineDash([6,4]); g.beginPath(); g.arc(mark[0],mark[1],see*s,0,7); g.stroke(); g.fillText('sees',mark[0],mark[1]-see*s-4)}
+    if(tell){g.setLineDash([2,4]); g.beginPath(); g.arc(mark[0],mark[1],tell*s,0,7); g.stroke(); g.fillText('tells',mark[0],mark[1]+tell*s+12)}
+    g.setLineDash([]); g.font='10.5px system-ui'}
   const op=(fr.operator||[])[0]; $('clock').textContent=clockText(fr.t,true)+(fr.environment?' · '+fr.environment.weather:'')+(op?`  ${op[1]?'advisory ':''}${op[2]?'bus priority ':''}${op[3]?'toll $'+op[3]:''}`:'');
   if(playing&&head<frames.length-1){head=Math.min(frames.length-1,head+ +$('speed').value*0.25); $('scrub').value=Math.floor(head)}
   placeCursors(); requestAnimationFrame(draw);

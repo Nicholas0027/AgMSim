@@ -22,9 +22,8 @@ import math
 from ..actions import Decision, Param
 from ..agency import AgencySpec
 from ..entities import TState, Vehicle, VState
-from ..network import current_weight, free_flow_weight
 from ..observation import km, minutes
-from .base import Kind, advance, path_to, register_kind, update_flows
+from .base import Kind, advance, known_eta, known_path, path_to, register_kind, update_flows
 
 OBJECTIVE_FAST = "Bring your owner to the destination as quickly as possible."
 OBJECTIVE_OWNER = ("Act in your owner's interest: weigh travel time against money (tolls, fares, energy) "
@@ -46,6 +45,7 @@ class VehicleKind(Kind):
     name = "vehicle"
     side = "machine"
     title = "Agentic vehicle (AgV, private car)"
+    drives = True
     role_prompt = (
         "You are the on-board decision-making agent of a privately owned agentic vehicle (AgV). You carry your "
         "owner from their origin to their destination; no human is driving. Depending on the authority you have "
@@ -103,24 +103,11 @@ class VehicleKind(Kind):
     # ------------------------------------------------------------------ knowledge
 
     def informed(self, v) -> bool:
-        """Does the vehicle navigate with real-time conditions (its own knowledge, or a public advisory)?"""
-        return self.world.advisory or (self.cfg.link_conditions != "none" and self.allows(v.id, "reroute"))
+        """Does the vehicle navigate by what is known of traffic (its own knowledge, or a public advisory)?"""
+        return self.world.advisory or (self.sim.traffic.can_know(self.name) and self.allows(v.id, "reroute"))
 
-    def known_weight(self, v):
-        """Link travel times as known to this vehicle."""
-        w = self.world
-        if w.advisory or self.cfg.link_conditions == "global":
-            return current_weight
-        if self.cfg.link_conditions == "none":
-            return free_flow_weight
-        x, y = w.xy(v)
-        r2, net = self.cfg.local_radius_m ** 2, w.net
-
-        def weight(link):
-            mx, my = net.position(link.id, link.length / 2.0)
-            return link.cur_time if (mx - x) ** 2 + (my - y) ** 2 <= r2 else link.free_time
-
-        return weight
+    def on_the_road(self):
+        return [v for v in self.world.vehicles.values() if v.state != VState.PARKED]
 
     def _remaining(self, v) -> tuple:
         return tuple(v.path[1:] if v.link is not None else v.path)
@@ -169,7 +156,7 @@ class VehicleKind(Kind):
             sim.emit("suggestion_declined", agent=tr.id, vehicle=v.id)
             return "declined"
         v.transfer, v.target = suggestion, suggestion["stop"]
-        v.path = path_to(w, v, v.target, self.informed(v))
+        v.path = known_path(sim, self, v, v.target)
         v.suggestions_accepted += 1
         self._check_battery(v)
         sim.feedback(v.id, {"event": "owner_accepted_suggestion"})
@@ -219,7 +206,7 @@ class VehicleKind(Kind):
         onward = v.transfer["stop"] if v.transfer else v.destination
         rows = []
         for s in w.stations.values():
-            row = {"station": s.id, "node": s.node, "drive_min": minutes(w.eta(v, s.node, self.informed(v))),
+            row = {"station": s.id, "node": s.node, "drive_min": minutes(known_eta(self.sim, self, v, s.node)),
                    "km": km(w.distance(v, s.node)), "price_usd_per_kwh": s.price, "chargers": s.chargers,
                    "chargers_in_use": len(s.plugged), "vehicles_queued": len(s.queue)}
             if onward is not None:
@@ -233,8 +220,7 @@ class VehicleKind(Kind):
         w, sim = self.world, self.sim
         owner = w.travelers[v.owner]
         anchor, lead_free, lead_cur, _ = w.anchor(v)
-        weight = self.known_weight(v)
-        dist, _ = w.net._dijkstra(anchor, weight)
+        dist, _ = w.net._dijkstra(anchor, sim.traffic.weight(self.name, v))
         options = []
         for plan in sim.kinds["bus"].stop_plans(owner.destination, owner.persona):
             node = w.lines[plan["line"]]["stops"][plan["board"]]
@@ -266,7 +252,7 @@ class VehicleKind(Kind):
 
         anchor, _, lead_cur, _ = w.anchor(v)
         remaining = self._remaining(v)
-        weight = self.known_weight(v)
+        weight, _, reports = self.sim.traffic.knowledge(self.name, v)
         current_s = w.net.route_time(remaining, weight)
         drive_s = current_s                  # the quickest the car can get there, as far as it knows
         routes = None
@@ -292,6 +278,9 @@ class VehicleKind(Kind):
                  "toll_usd": 0.0 if v.toll_paid else w.route_toll(r.links), "is_current_route": i == 0}
                 for i, r in enumerate(routes)]
         context = {"routes": rows}
+        basis = self.sim.traffic.explain(self.name, v, routes, reports)
+        if basis:                                # what the estimates rest on, where the vehicle does not see for itself
+            context["traffic_knowledge"] = basis
         actions = [self.spec("choose_route", Param("route", "integer", tuple(range(len(routes)))))]
         aux = {"routes": routes}
         if transfers:
@@ -368,20 +357,19 @@ class VehicleKind(Kind):
         else:
             v.charge_target = b.target_soc
         v.state, v.station, v.target = VState.TO_CHARGER, station_id, station.node
-        v.path = path_to(w, v, station.node, self.informed(v))
+        v.path = known_path(self.sim, self, v, station.node)
         v.needs_charge, v.park_pending, v.charge_stops = False, False, v.charge_stops + 1
         self.sim.emit("charge_trip", agent=v.id, station=station_id, owner_on_board=v.passenger is not None)
 
     def charged(self, v, now: int) -> None:
         """Called by the charging-station kind when a session ends."""
-        w = self.world
         v.station = None
         if v.passenger is None:
             self._park(v)
             return
         v.state = VState.DRIVING
         v.target = v.transfer["stop"] if v.transfer else v.destination
-        v.path = path_to(w, v, v.target, self.informed(v))
+        v.path = known_path(self.sim, self, v, v.target)
         v.next_route_check = now
 
     def conditions_changed(self) -> None:
