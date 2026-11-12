@@ -393,7 +393,8 @@ The `signals` experiment asks whether traffic lights need agency of their own or
 down or move while free do to waiting and to the fleet, on `agmsim run city_ondemand`; the `places`
 experiment asks whether rain, a match ending and a blocked road add up, on `agmsim run town_places`; the
 `knowledge` and `knowledge_near` experiments ask what a car's sight, its memory and what other cars tell
-it are each worth, on `agmsim run two_bridges`; `decision_memory` asks whether a car that keeps no road in
+it are each worth, on `agmsim run two_bridges`; `vehicle_agency` changes nothing but the level of the
+private cars, from L0 to L4, on `agmsim run city_multimodal`; `decision_memory` asks whether a car that keeps no road in
 mind is helped by recalling its own decisions (and `llm_decision_memory` whether a language model makes
 that use of them; `experiments/insitu_memory.py` puts the same decision points to a model one at a time,
 which costs far less, and `experiments/insitu_identity.py` checks whether telling a car which route is which

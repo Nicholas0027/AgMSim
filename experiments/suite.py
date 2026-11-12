@@ -52,7 +52,37 @@ EVENTS = {
 # the vehicle algorithm's use of its memory: for 10 minutes after a change of route, change again only to save 5 minutes
 SETTLE = {"settle_min": 10, "resettle_saving_min": 5}
 
+# the vehicles' level, from following the default route to arranging their own charging
+VEHICLE_LEVELS = {
+    "车 L0（照默认路线开）": {"agents.vehicle.agency": "L0"},
+    "车 L1（可以改道）": {"agents.vehicle.agency": "L1"},
+    "车 L2（还知道车主的偏好）": {"agents.vehicle.agency": "L2"},
+    "车 L3（还可以提议换乘）": {"agents.vehicle.agency": "L3"},
+    "车 L4（还自己安排充电）": {"agents.vehicle.agency": "L4"},
+    "车 L4 · 不主动去充电": {"agents.vehicle.agency": "L4", "agents.vehicle.policy_params": {"top_up_below_pct": 0}},
+}
+LEVEL_METRICS = {"outcomes.wait_time_s_mean": "平均等待(秒)", "outcomes.vmt_miles": "VMT(英里)", "outcomes.vht_hours": "VHT(小时)",
+                 "outcomes.traffic_speed_mph": "平均车速(英里/时)", "travelers.trip_time_s_mean": "平均出行时间(秒)",
+                 "travelers.generalised_cost_usd_mean": "广义成本(美元)", "vehicles.reroutes": "改道次数",
+                 "vehicles.tolls_usd": "收费总额(美元)", "vehicles.suggestions": "换乘提议", "vehicles.charge_stops": "充电出行次数",
+                 "vehicles.empty_km_share": "空驶占比", "operator.advisories_published": "协调者通告"}
+
 EXPERIMENTS = {
+    "vehicle_agency": {
+        "question": "同一座城，其他都不变，只把车的 agency 从 L0 调到 L4，系统表现怎么变？",
+        "scenario": "city_multimodal",                # a packaged scenario, by its name
+        "arms": VEHICLE_LEVELS,
+        "metrics": LEVEL_METRICS,
+    },
+    "vehicle_agency_alone": {
+        "question": "同一座城，其他主体都不作为（协调者不发通告，收费固定，公交优先常开，出行者听车的），只改车的等级呢？",
+        "scenario": "city_multimodal",
+        "base": {"agents.traveler.agency": "L0", "agents.bus.agency": "L0", "agents.evcs.agency": "L0",
+                 "agents.operator.agency": "L0", "agents.operator.initial_toll": 0.6,
+                 "agents.operator.initial_bus_priority": True},
+        "arms": VEHICLE_LEVELS,
+        "metrics": LEVEL_METRICS,
+    },
     "incident": {
         "question": "事故发生时，是车有 agency 管用，还是运营方有 agency 管用？",
         "scenario": "incident.yaml",
@@ -323,8 +353,8 @@ def run_experiment(name: str, seeds: int, workers: int, llms=("qwen-local",), ll
         def progress(n, _total, offset=done):
             print(f"\r  {name}: {offset + n}/{total} runs", end="", file=sys.stderr, flush=True)
 
-        rows += run_arms(str(HERE / "scenarios" / exp["scenario"]), arms, list(range(1, seeds + 1)),
-                         workers=group_workers, progress=progress)
+        source = exp["scenario"] if not exp["scenario"].endswith(".yaml") else str(HERE / "scenarios" / exp["scenario"])
+        rows += run_arms(source, arms, list(range(1, seeds + 1)), workers=group_workers, progress=progress)
         done = len(rows)
     print(file=sys.stderr)
     rows.sort(key=lambda row: order.index(row["arm"]))
@@ -345,7 +375,7 @@ def run_experiment(name: str, seeds: int, workers: int, llms=("qwen-local",), ll
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("names", nargs="*", help="experiments to run (default: all that need no LLM)")
-    parser.add_argument("--seeds", type=int, default=10)
+    parser.add_argument("--seeds", type=int, default=3, help="3 while developing; more for results that are reported")
     parser.add_argument("--workers", type=int, default=6, help="runs at a time for arms without a language model")
     parser.add_argument("--llm", nargs="+", default=["qwen-local"], choices=[p for p in LLM_PRESETS if p != "mock"],
                         help="language model preset(s) for the {llm} arms")
