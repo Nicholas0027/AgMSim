@@ -10,3 +10,7 @@ __pycache__/
 online/site/
 # internal notes, kept out of the repository
 docs/DESIGN_zh.md
+
+# the built project site
+website/_build/
+website/_static/testbed.html

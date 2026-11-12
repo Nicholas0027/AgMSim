@@ -39,8 +39,8 @@ Positions, lengths, speeds and lanes are approximate values by class of road. It
 experiment on, not a calibrated model of the city. It is the one scenario of the package: an experiment
 changes settings of the testbed, it does not bring a network of its own.
 
-**Try it without installing anything:** <https://nicholas0027.github.io/AgMSim/> is the web interface with
-the simulator running inside your browser. It opens on the testbed (`montreal`); set the decision
+**Project site, with the simulator in the page:** <https://nicholas0027.github.io/AgMSim/> (source in
+`website/`, published with `sh website/publish.sh`). The simulator runs inside your browser. It opens on the testbed (`montreal`); set the decision
 model and agency level of each kind of agent, press Run, and click any decision to see what the agent saw.
 To let a language model decide, choose `LLM` for a kind of agent and type your own API key (for example a
 DeepSeek key): the key stays in your browser tab and the calls go straight from your browser to the provider.
@@ -98,7 +98,7 @@ The online demo is that same page as a static site: `.venv/bin/python online/bui
 `agmsim/browser.py`). Any static host can serve it; nothing is sent to a server. A visitor who chooses an
 LLM types their own key into the page; it is kept in that tab's memory only, never becomes part of a
 configuration or trace, and the browser itself calls the provider (which must accept requests from web
-pages; DeepSeek's API does). `sh online/publish.sh` rebuilds it and
+pages; DeepSeek's API does). `sh website/publish.sh` rebuilds the project site with the simulator in it and
 pushes it to the `gh-pages` branch, which GitHub Pages serves.
 
 ## Outcome variables
@@ -443,8 +443,7 @@ report["scores"]["sensitivity"]        # report["rows"] holds every item's answe
 
 evaluates the listed presets in three answer formats, stores every answer under
 `experiments/results/benchmark/` and rebuilds `experiments/results/benchmark.md` from all stored results.
-`experiments/insitu.py` scores the decision points of a closed-loop experiment one by one, to check that
-the two agree. New tasks subclass `agmsim.benchmark.Task` and register with `@register_task`.
+New tasks subclass `agmsim.benchmark.Task` and register with `@register_task`.
 
 ## Plugging in your own components
 
@@ -486,7 +485,7 @@ def toll_averse(obs):                       # obs.trigger, obs.state, obs.contex
   are always truthful and taken at face value; there are no free-text messages between agents. Recalling
   its own decisions helps a car when a built-in rule uses them; the language models tried used them only
   when the memory said what came of a decision and routes could be told apart, and then only after being
-  caught out once (`docs/EXPERIMENTS_zh.md`, section 12).
+  caught out once (`docs/archive/EXPERIMENTS_before_testbed_zh.md`, section 12).
 - The operator's action set is small. No validation against real-world data has been done.
 
 Tests: `.venv/bin/python -m pytest`. Experiments and measured results (in Chinese): `docs/EXPERIMENTS_zh.md`.
