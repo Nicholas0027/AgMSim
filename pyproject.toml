@@ -13,6 +13,7 @@ dependencies = ["pyyaml>=6.0"]
 [project.optional-dependencies]
 anthropic = ["anthropic>=1.0"]
 dev = ["pytest>=8", "anthropic>=1.0"]
+docs = ["sphinx>=7", "furo", "myst-parser"]      # to build the project site (website/)
 
 [project.scripts]
 agmsim = "agmsim.cli:main"

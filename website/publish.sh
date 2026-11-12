@@ -4,6 +4,8 @@
 #     SITE_REPO=https://github.com/<user>/<repo>.git sh website/publish.sh           # to another repository
 # The site is the pages in website/ (Sphinx, Furo theme) plus the simulator that runs in the browser
 # (online/build.py), put at simulator/. Its links are relative, so it can be served from any address.
+# Needs the site builder in the project's environment, once:
+#     uv pip install --python .venv/bin/python -e ".[docs]"      (or: .venv/bin/pip install -e ".[docs]")
 set -e
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
@@ -14,7 +16,12 @@ HELPER=$(git config --get-all credential.https://github.com.helper | tail -1)
 
 .venv/bin/python website/figures.py
 rm -rf website/_build
-uvx --quiet --from sphinx --with furo --with myst-parser sphinx-build -q -b html website website/_build/html
+if ! .venv/bin/python -c "import sphinx, furo, myst_parser" 2>/dev/null; then
+    echo "the site builder is not installed in .venv; run once:"
+    echo '    uv pip install --python .venv/bin/python -e ".[docs]"     (or: .venv/bin/pip install -e ".[docs]")'
+    exit 1
+fi
+.venv/bin/python -m sphinx -q -b html website website/_build/html
 .venv/bin/python online/build.py --repo "$(git remote get-url origin | sed -e 's/\.git$//')"
 cp -R online/site website/_build/html/simulator
 touch website/_build/html/.nojekyll

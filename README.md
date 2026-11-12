@@ -40,7 +40,8 @@ experiment on, not a calibrated model of the city. It is the one scenario of the
 changes settings of the testbed, it does not bring a network of its own.
 
 **Project site, with the simulator in the page:** <https://nicholas0027.github.io/agenticmobility/> (source in
-`website/`, published with `sh website/publish.sh` to the repository `agenticmobility`). The simulator runs inside your browser. It opens on the testbed (`montreal`); set the decision
+`website/`, published with `sh website/publish.sh` to the repository `agenticmobility`; building it needs
+`uv pip install --python .venv/bin/python -e ".[docs]"` once). The simulator runs inside your browser. It opens on the testbed (`montreal`); set the decision
 model and agency level of each kind of agent, press Run, and click any decision to see what the agent saw.
 To let a language model decide, choose `LLM` for a kind of agent and type your own API key (for example a
 DeepSeek key): the key stays in your browser tab and the calls go straight from your browser to the provider.
