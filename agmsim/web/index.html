@@ -10,11 +10,13 @@
 :root{color-scheme:light;
   --page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;
   --ring:rgba(11,11,11,.10);--wash:rgba(11,11,11,.045);--accent:#2a78d6;--critical:#d03b3b;--track:#cde2fb;
+  --ok:#0b6b2f;--ok-bg:#d9f2e3;
   --k-traveler:#2a78d6;--k-vehicle:#eb6834;--k-bus:#1baf7a;--k-evcs:#eda100;--k-operator:#e87ba4;--k-signal:#008300;--k-ondemand:#6250d6;--k-other:#898781;
   --p-rest:#86b6ef;--p-move:#2a78d6;--p-done:#104281;--road:#c3c2b7;--road-busy:#3a3936;--parked:#a9a79f}
 @media (prefers-color-scheme:dark){:root{color-scheme:dark;
   --page:#0d0d0d;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;
   --ring:rgba(255,255,255,.10);--wash:rgba(255,255,255,.06);--accent:#3987e5;--critical:#d03b3b;--track:#0d366b;
+  --ok:#7fdca0;--ok-bg:#12351f;
   --k-traveler:#3987e5;--k-vehicle:#d95926;--k-bus:#199e70;--k-evcs:#c98500;--k-operator:#d55181;--k-signal:#008300;--k-ondemand:#9085e9;--k-other:#898781;
   --p-rest:#86b6ef;--p-move:#3987e5;--p-done:#184f95;--road:#383835;--road-busy:#d8d7cf;--parked:#5c5b57}}
 *{box-sizing:border-box}
@@ -93,7 +95,7 @@ details{margin-top:10px}summary{cursor:pointer;color:var(--ink2);font-size:12px}
 #decisions{flex:none}.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}.filters select{width:auto}
 .filters label{display:flex;gap:5px;align-items:center;margin:0}
 .chip{border:1px solid var(--ring);border-radius:999px;padding:2px 9px;background:var(--page);font-size:12px}
-#log{max-height:232px;overflow:auto;border-top:1px solid var(--grid)}
+#log{max-height:232px;overflow:auto;overflow-x:hidden;contain:paint;border-top:1px solid var(--grid)}
 #log .dec{display:flex;gap:6px;align-items:baseline;padding:4px 4px;border-bottom:1px solid var(--grid);cursor:pointer;font-size:12.5px}
 #log .dec:hover,#log .dec.on{background:var(--wash)}#log .dec.on{box-shadow:inset 2px 0 0 var(--accent)}
 #log .t{color:var(--muted);font-variant-numeric:tabular-nums;font-size:11.5px;flex:none}#log .dot{align-self:center;margin:0}
@@ -104,11 +106,45 @@ details{margin-top:10px}summary{cursor:pointer;color:var(--ink2);font-size:12px}
 .facts code{background:var(--wash);border-radius:4px;padding:0 4px;font-size:12px}
 pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px solid var(--ring);border-radius:7px;padding:8px;max-height:260px;overflow:auto;font-size:11.5px;margin:6px 0 0}
 .linkish{background:none;border:0;padding:0;color:var(--accent);cursor:pointer}.linkish:hover{text-decoration:underline;background:none}
-@media (max-width:1180px){main{grid-template-columns:1fr;height:auto}main>*{overflow:visible}#mapcard{flex:none}canvas{height:420px;flex:none}header .tag{display:none}}
+/* two views: the simulation, and the guide to what is in it */
+#views{margin-left:auto;display:flex;gap:4px}
+#views button,#cols button{border:1px solid transparent;background:none;border-radius:7px;padding:5px 11px;font-weight:600;color:var(--ink2)}
+#views button:hover,#cols button:hover{background:var(--wash)}
+#views button.on,#cols button.on{background:var(--wash);border-color:var(--ring);color:var(--ink)}
+#cols{display:none}main[hidden],#guide[hidden],#cols[hidden]{display:none!important}
+.kname{background:none;border:0;padding:0;font:inherit;font-weight:600;color:inherit;cursor:pointer;text-decoration:underline dotted var(--muted);text-underline-offset:3px}
+.kname:hover{color:var(--accent);background:none}
+#guide{display:grid;grid-template-columns:300px minmax(0,1fr);gap:12px;padding:12px;height:calc(100vh - 48px)}
+#glist,#gdetail{overflow:auto;min-height:0}#glist h2{margin:14px 0 4px}#glist h2:first-child{margin-top:0}
+.gitem{display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:7px 8px;border-radius:9px;border:1px solid transparent;background:none;font-weight:600}
+.gitem:hover{background:var(--wash)}.gitem.on{background:var(--wash);border-color:var(--ring)}
+.gitem small{display:block;color:var(--muted);font-weight:400;font-size:11.5px}
+.gicon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;flex:none;color:#fff;background:var(--ink2)}
+.gicon svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ghead{display:flex;gap:14px;align-items:center}.ghead .gicon{width:54px;height:54px;border-radius:13px}.ghead .gicon svg{width:30px;height:30px}
+.ghead h2{font-size:18px;margin:0;font-weight:600}.ghead p{margin:2px 0 0;color:var(--ink2);max-width:72ch}
+.gsec{margin-top:18px}.gsec>h3{margin:0 0 6px;font-size:13px}.gsec>h3 small{color:var(--muted);font-weight:400}
+.gt{width:100%;border-collapse:collapse}.gt th,.gt td{padding:5px 12px 5px 0;border-bottom:1px solid var(--grid);text-align:left;vertical-align:top}
+.gt th{color:var(--muted);font-weight:500;font-size:11.5px}.gt td.n{font-variant-numeric:tabular-nums;white-space:nowrap}.gt code{font-size:12px}
+.pill{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11.5px;font-weight:600;white-space:nowrap;background:var(--wash);color:var(--muted)}
+.pill.on{background:var(--ok-bg);color:var(--ok)}
+.gbar{display:inline-block;height:7px;border-radius:3px;vertical-align:middle;margin-right:7px;min-width:2px}
+.gkv{display:grid;grid-template-columns:minmax(150px,max-content) 1fr;gap:3px 16px;margin:0}.gkv dt{color:var(--muted)}.gkv dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.glive{border:1px solid var(--ring);border-radius:10px;padding:12px 14px;background:var(--page)}.glive>h3{margin:0 0 6px;font-size:13px}.glive>h3+*{margin-top:0}
+.glive .gsub{margin:12px 0 4px;font-weight:600}
+/* a narrow window shows one column at a time, so the page stays short */
+@media (max-width:1180px){main{grid-template-columns:1fr;height:auto}main>*{overflow:visible}
+  body:not([data-col=setup]) #setup,body:not([data-col=centre]) #centre,body[data-col=setup] #side,body[data-col=centre] #side,
+  body[data-col=results] #decisions,body[data-col=results] #selected,body[data-col=side] #results{display:none}
+  #cols{display:flex;gap:4px;padding:8px 12px 0}#mapcard{flex:none}canvas{height:420px;flex:none}header .tag{display:none}
+  #guide{grid-template-columns:1fr;height:auto}#glist{display:flex;flex-wrap:wrap;gap:2px 6px}#glist h2{width:100%;margin-top:8px}.gitem{width:auto;padding-right:14px}}
+@media (min-width:1181px){body{overflow:hidden}}      /* the columns scroll, the page does not */
 </style>
 </head>
-<body>
-<header><h1>AgMSim</h1><span class="tag">Agentic Mobility Simulator: who decides, and with how much authority, is set for every kind of agent</span></header>
+<body data-col="setup">
+<header><h1>AgMSim</h1><span class="tag">Agentic Mobility Simulator: who decides, and with how much authority, is set for every kind of agent</span>
+<nav id="views" aria-label="View"><button data-v="sim" class="on">Simulate</button><button data-v="guide">Guide</button></nav></header>
+<nav id="cols" aria-label="Part of the page"><button data-c="setup" class="on">1 · Set up</button><button data-c="centre">2 · Map and charts</button><button data-c="results">3 · Results</button><button data-c="side">4 · Decisions</button></nav>
 <main>
 <section id="setup" class="card">
   <h2>Assistant <span class="plain">say what you want to run</span></h2>
@@ -191,6 +227,10 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
   </section>
 </div>
 </main>
+<section id="guide" hidden>
+  <div id="glist" class="card"></div>
+  <div id="gdetail" class="card"></div>
+</section>
 <div id="tip" hidden></div>
 <script>
 const $=id=>document.getElementById(id);
@@ -228,11 +268,12 @@ function agentRows(){
   $('filter').innerHTML='<option value="">all kinds</option>'+sc.kinds.map(k=>`<option value="${k}">${label(k)}</option>`).join('');
   for(const k of sc.kinds){const kd=meta.kinds[k], a=sc.agents[k], tr=tb.insertRow();
     const lvl=typeof a.agency==='string'?a.agency:'L0', pol=kd.policies.filter(p=>p!=='llm'&&p!=='remote');
-    tr.innerHTML=`<td title="${kd.title}"><span class="dot" style="background:${kindColor(k)}"></span>${label(k)}</td>
+    tr.innerHTML=`<td title="${kd.title}"><span class="dot" style="background:${kindColor(k)}"></span><button class="kname" data-guide="${k}" title="What it is, what it may do and what it is doing: open the guide">${label(k)}</button></td>
     <td><select data-k="${k}" data-f="model" aria-label="${k} decided by">${pol.map(p=>`<option value="${p}" title="${MODEL_HINT[p]||'built-in'}" ${!a.use_llm&&p===a.policy?'selected':''}>${p} (built-in)</option>`).join('')}<option value="llm" title="a language model, set below" ${a.use_llm?'selected':''}>LLM (language model)</option></select>
       <div class="fb">if its reply is unusable: <select data-k="${k}" data-f="fallback" aria-label="${k} fallback">${pol.map(p=>`<option ${p===a.policy?'selected':''}>${p}</option>`).join('')}</select></div></td>
     <td><select data-k="${k}" data-f="agency" aria-label="${k} agency level">${Object.keys(kd.levels).map(l=>`<option ${l===lvl?'selected':''} title="${kd.levels[l].join(', ')||'no authority'}">${l}</option>`).join('')}</select></td>`}
   tb.querySelectorAll('select[data-f=model]').forEach(e=>e.onchange=llmSection); llmSection();
+  tb.querySelectorAll('[data-guide]').forEach(b=>b.onclick=()=>openGuide(b.dataset.guide));
   const kb=$('know').tBodies[0]; kb.textContent='';                 // what each kind has to go on
   for(const k of sc.kinds){const m=sc.agents[k].knows, tr=kb.insertRow(), opt=(v,t,cur)=>`<option value="${v}" ${String(v)===String(cur)?'selected':''}>${t}</option>`;
     tr.innerHTML=`<td><span class="dot" style="background:${kindColor(k)}"></span>${label(k)}</td>
@@ -288,6 +329,7 @@ async function start(){
     if(spec.error){$('status').textContent=spec.error; $('status').className='err'; $('apikey').focus(); return}
     for(const [k,v] of Object.entries(spec))ov.push(`llm.${k}=${v}`)}
   const r=await api('/api/run',{scenario:$('scenario').value,overrides:ov});
+  setCol('centre'); metricsNow=null;
   run=r.id; header=null; frames=[]; decisions=[]; head=0; playing=true; model=null; selected=null; story=null; agentFilter=null; $('play').textContent='Pause';
   $('log').textContent=''; $('metrics').textContent='Running…'; $('metrics').className='note'; $('status').className=''; $('story').textContent='Click a decision above.'; $('story').className='note';
   $('agentchip').textContent=''; $('charts').classList.add('empty'); $('timehint').textContent='Charts appear once a run starts.'; hideTip();
@@ -304,7 +346,8 @@ async function poll(){
   if(r.frames.length||r.decisions.length)renderCharts();
   $('status').textContent=r.status==='error'?r.error:`${r.status}: tick ${r.tick} / ${r.ticks}, ${decisions.length} decisions`;
   if(r.status==='error')$('status').className='err';
-  if(r.metrics)renderMetrics(r.metrics);
+  if(r.metrics){metricsNow=r.metrics; renderMetrics(r.metrics)}
+  if(view==='guide'&&(r.header||r.metrics))renderGuide();
   if(['done','stopped','error'].includes(r.status)&&!r.frames.length&&!r.decisions.length){clearInterval(timer); if(selected!==null)select(selected)}
 }
 
@@ -367,7 +410,7 @@ function refillLog(){const log=$('log'); log.textContent=''; const keep=decision
 async function select(i,reveal){
   selected=i; document.querySelectorAll('#log .dec').forEach(e=>e.classList.toggle('on',+e.dataset.i===i));
   const d=await api(`/api/run/${run}/decision/${i}`); if(!d||!d.agent)return;
-  story=await api(`/api/run/${run}/agent/${d.agent}`); story.decision=d; renderStory();
+  story=await api(`/api/run/${run}/agent/${d.agent}`); story.decision=d; if(reveal)setCol('side'); renderStory();
   if(reveal)$('selected').scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 function renderStory(){
@@ -601,6 +644,183 @@ function draw(){
   placeCursors(); requestAnimationFrame(draw);
 }
 
+// ---------------------------------------------------------------- guide: what is in the simulation, and what each part is doing
+// Every part of the scenario is an entry: click it to see what it is, what it can do, all its settings, and what it is doing in the run.
+const ICON={traveler:'<circle cx="12" cy="6" r="3"/><path d="M6 21v-3a6 6 0 0 1 12 0v3"/>',
+  vehicle:'<path d="M3 16v-4l2.5-5h11L19 12h2v4"/><path d="M3 12h16"/><circle cx="7.5" cy="16.5" r="2"/><circle cx="16.5" cy="16.5" r="2"/><path d="M9.5 16.5h5"/>',
+  ondemand:'<path d="M3 17v-4l2.5-4h11L19 13h2v4"/><path d="M3 13h16"/><circle cx="7.5" cy="17.5" r="2"/><circle cx="16.5" cy="17.5" r="2"/><path d="M9.5 17.5h5M9.5 9V5.5h5V9"/>',
+  bus:'<rect x="4" y="4" width="16" height="13" rx="2"/><path d="M4 11h16M8 17v2.5M16 17v2.5M8 14h.01M16 14h.01"/>',
+  evcs:'<path d="M13 3L6 13h5l-1 8 7-10h-5z"/>',
+  signal:'<rect x="8" y="2" width="8" height="20" rx="3"/><circle cx="12" cy="7" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="12" cy="17" r="1.3"/>',
+  operator:'<circle cx="12" cy="12" r="2"/><path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2"/>',
+  network:'<circle cx="5" cy="6" r="2"/><circle cx="19" cy="7" r="2"/><circle cx="12" cy="18" r="2"/><path d="M7 6.2l10 .6M6 7.8l5 8.4M18 8.8l-5 7.4"/>',
+  places:'<path d="M12 21s6-5.5 6-10a6 6 0 0 0-12 0c0 4.5 6 10 6 10z"/><circle cx="12" cy="11" r="2"/>',
+  lines:'<circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h5a3 3 0 0 0 0-6h-2a3 3 0 0 1 0-6h5"/>',
+  events:'<path d="M12 4L3 20h18z"/><path d="M12 10v5M12 17.5v.01"/>',
+  scenario:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  demand:'<path d="M4 8h13M14 5l3 3-3 3M20 16H7M10 13l-3 3 3 3"/>',
+  outcomes:'<path d="M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3"/>'};
+const ABOUT={traveler:'A person with a trip to make. Chooses how to travel, answers what their car proposes, and may give up waiting or change plans.',
+  vehicle:'A private car, one per traveller who owns one. It drives its owner; with agency it re-routes on traffic, weighs time against money for the owner, proposes park-and-ride, and manages its own charging.',
+  ondemand:'A car of the on-demand fleet. It carries travellers who call a car; with agency it re-routes, turns requests down, and chooses where to wait while free.',
+  bus:'A transit vehicle on a line. It serves the stops of its line in order; with agency it holds at stops or skips a stop nobody needs.',
+  evcs:'A charging station as a decision-maker. It charges the cars that come; with agency it sets its price and chooses who charges next.',
+  signal:'The traffic lights of one junction. They follow a fixed-time plan; with agency they keep or end a green by the queues they see, and act on what the orchestrator asks for.',
+  operator:'The orchestrator of the network. It sees the slowest roads; with agency it publishes advisories, gives transit priority, sets a charge to enter the centre and asks traffic lights for help.',
+  scenario:'The run itself: which morning is simulated, for how long, in what steps, and with which random seed.',
+  demand:'Who travels: how many people, when they set out, where they live and where they go.',
+  outcomes:'The four measures every run reports for the system as a whole.',
+  network:'The roads: nodes are districts, interchanges and the far ends of the crossings; roads have a length, a free-flow speed and a number of lanes, and slow down as they fill.',
+  places:'Named destinations. A trip goes to a place that fits its purpose: a commute to a workplace, an errand to a shop.',
+  events:'What happens to the city during the run, whatever the agents do: a road slowed or blocked, weather, a surge of trips, a place closing.',
+  lines:'The transit lines: the stops each line serves, in order, and how many vehicles run on it.',
+  stations:'Where cars can charge: the sites, their chargers and their power.',
+  lights:'The junctions that have traffic lights, and the green phases each can show.'};
+let view='sim', gsel='vehicle', metricsNow=null;
+const gicon=(name,color)=>{const e=el('span','gicon'); if(color)e.style.background=color; e.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[name]}</svg>`; return e};
+const curCfg=()=>header?header.config:meta.scenarios[$('scenario').value].config;
+const curNet=()=>header?header.network:meta.scenarios[$('scenario').value].network;
+const nodeName=n=>{const names=curNet().names; return names&&names[n]!==undefined?names[n]:'node '+n};
+const dayText=t=>{const c=dayClock(curCfg().simulation.clock_start)+t; return `${two(c/3600%24)}:${two(c%3600/60)}`};
+const nowFrame=()=>frames.length?frames[Math.min(frames.length-1,Math.floor(head))]:null;
+const showV=v=>v===null||v===undefined?'–':Array.isArray(v)&&v.length&&typeof v[0]==='object'?v.map(x=>Object.entries(x).map(([a,b])=>`${a} ${JSON.stringify(b)}`).join(' · ')).join('\n'):typeof v==='object'?JSON.stringify(v):String(v);
+function setCol(c){document.body.dataset.col=c; document.querySelectorAll('#cols button').forEach(b=>b.classList.toggle('on',b.dataset.c===c));
+  if(c==='centre'&&header)requestAnimationFrame(renderCharts); if(c==='side'&&story)requestAnimationFrame(renderStory); scrollTo(0,0)}
+function setView(v){view=v; $('guide').hidden=v!=='guide'; document.querySelector('main').hidden=v==='guide'; $('cols').hidden=v==='guide';
+  document.querySelectorAll('#views button').forEach(b=>b.classList.toggle('on',b.dataset.v===v)); if(v==='guide')renderGuide(); else if(header)requestAnimationFrame(renderCharts)}
+function openGuide(id){gsel=id; setView('guide')}
+function guideItems(){
+  const cfg=curCfg(), sc=meta.scenarios[$('scenario').value], active=header?Object.keys(header.kinds):sc.kinds, A=cfg.agents, net=curNet();
+  const level=k=>header?header.kinds[k].agency.level:typeof A[k].agency==='string'?A[k].agency:'custom';
+  const out=[['The scenario','scenario','The run','scenario',`${dayText(0)} to ${dayText(cfg.simulation.duration_seconds)} · seed ${cfg.simulation.seed}`],
+    ['The scenario','demand','Trips','demand',`${A.traveler.count} travellers`],
+    ['The scenario','outcomes','Outcome measures','outcomes','waiting, VMT, VHT, speed'],
+    ['The environment','network','Road network','network',`${net.nodes.length} nodes · ${net.links.length/2} roads`],
+    ['The environment','places','Places','places',`${(cfg.pois||[]).length} named places`],
+    ['The environment','events','Events','events',`${(cfg.interventions||[]).length} during the run`]];
+  if(active.includes('bus'))out.push(['The environment','lines','Transit lines','lines',`${(A.bus.lines||[]).length} lines`]);
+  if(active.includes('evcs'))out.push(['The environment','stations','Charging sites','evcs',`${(A.evcs.stations||[]).length} stations`]);
+  if(active.includes('signal'))out.push(['The environment','lights','Junctions with lights','signal',`${header?Object.keys(header.signals).length:Array.isArray(A.signal.junctions)?A.signal.junctions.length:'all'} junctions`]);
+  for(const k of KINDS)if(active.includes(k))out.push(['The agents',k,label(k),k,`${header?header.kinds[k].count+' · ':''}${level(k)} · ${A[k].use_llm?'language model':A[k].non_llm_policy}`]);
+  return out.map(([group,id,title,ic,sub])=>({group,id,title,ic,sub,color:KINDS.includes(id)?kindColor(id):null}));
+}
+function renderGuide(){
+  const items=guideItems(), list=$('glist'); if(!items.some(i=>i.id===gsel))gsel=items[0].id; list.textContent=''; let group=null;
+  for(const it of items){if(it.group!==group){group=it.group; list.append(el('h2','',group))}
+    const b=el('button','gitem'+(it.id===gsel?' on':'')), t=el('span'); t.append(it.title, el('small','',it.sub)); b.append(gicon(it.ic,it.color),t);
+    b.onclick=()=>{gsel=it.id; renderGuide(); $('gdetail').scrollTop=0}; list.append(b)}
+  const it=items.find(i=>i.id===gsel), host=$('gdetail'); host.textContent='';
+  const head=el('div','ghead'), txt=el('div'); txt.append(el('h2','',it.title[0].toUpperCase()+it.title.slice(1)), el('p','',ABOUT[it.id])); head.append(gicon(it.ic,it.color),txt); host.append(head);
+  if(!header)host.append(el('div','note','Settings shown are those of the scenario as it comes. What you change on the Simulate page applies when you press Run; this page then shows the run.'));
+  (KINDS.includes(it.id)?kindStatic:PART[it.id])(host,it.id);
+  const live=el('div','gsec'); live.id='glive'; host.append(live); renderGuideLive();
+  if(KINDS.includes(it.id))kindSettings(host,it.id);
+}
+const gsec=(host,title,sub)=>{const s=el('div','gsec'), h=el('h3','',title); if(sub)h.append(' ',el('small','',sub)); s.append(h); host.append(s); return s};
+const gtable=(host,heads,rows)=>{const t=el('table','gt'); if(heads){const tr=t.createTHead().insertRow(); for(const h of heads)tr.append(el('th','',h))}
+  const tb=t.createTBody(); for(const r of rows){const tr=tb.insertRow(); for(const c of r){const td=tr.insertCell(); if(c instanceof Node)td.append(c); else if(Array.isArray(c)){td.className='n'; td.append(...c)} else td.textContent=showV(c)}} host.append(t); return t};
+const gkv=(host,rows)=>{const d=el('dl','gkv'); for(const [k,v] of rows){const dd=el('dd'); if(v instanceof Node)dd.append(v); else dd.textContent=showV(v); d.append(el('dt','',k),dd)} host.append(d)};
+const flat=(o,pre='')=>Object.entries(o||{}).flatMap(([k,v])=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).length?flat(v,pre+k+'.'):[[pre+k,v]]);
+const pill=(on,text)=>el('span','pill'+(on?' on':''),text);
+const bar=(n,max,color)=>{const b=el('span','gbar'); b.style.width=Math.round(90*n/Math.max(1,max))+'px'; b.style.background=color||'var(--accent)'; return b};
+// ---- an agent kind: who decides, what it may do, what it has to go on; then (live) what it has been asked and has chosen
+function kindStatic(host,k){
+  const mk=meta.kinds[k], cfg=curCfg().agents[k], hk=header&&header.kinds[k];
+  const level=hk?hk.agency.level:typeof cfg.agency==='string'?cfg.agency:'custom', allowed=new Set(hk?hk.agency.permissions:mk.levels[level]||(Array.isArray(cfg.agency)?cfg.agency:[]));
+  const s1=gsec(host,'Who decides, and how much');
+  gkv(s1,[['Decided by',cfg.use_llm?'a language model (set on the Simulate page)':`${cfg.non_llm_policy} — ${MODEL_HINT[cfg.non_llm_policy]||'built-in'}`],
+    ['Agency level',`${level}${meta.level_names&&meta.level_names[level]?' · '+meta.level_names[level]:''}`],
+    ['How many',hk?`${hk.count} in this run`:'known once a run has started']]);
+  if(cfg.mix&&cfg.mix.length)gkv(s1,[['Mixed population',JSON.stringify(cfg.mix)]]);
+  const s2=gsec(host,'What it may do','its functions: green ones are switched on at its level'), from=p=>Object.keys(mk.levels).find(l=>mk.levels[l].includes(p))||'–';
+  gtable(s2,['','Function','What it means','From level'],Object.keys(mk.permissions).map(p=>[pill(allowed.has(p),allowed.has(p)?'on':'off'),el('code','',p),mk.permissions[p],from(p)]));
+  if(!allowed.size)s2.append(el('div','note','At this level it has no say: at every decision point the default applies and its decision model is not consulted.'));
+  const m=hk?hk.mechanisms:{memory:cfg.memory,observation:cfg.observation,interaction:cfg.interaction}, s3=gsec(host,'What it has to go on','observation, memory, interaction');
+  const rows=[['Its own decisions it recalls',m.memory.decisions?`the latest ${m.memory.decisions}${m.memory.reasons?', with the reason given':''}`:'none']];
+  if(m.observation&&m.observation.traffic!==undefined){
+    rows.push(['Traffic it sees for itself',m.observation.traffic==='local'?`roads within ${m.observation.radius_m} m`:m.observation.traffic==='none'?'none':'every road']);
+    rows.push(['Slow roads it keeps in mind',m.memory.traffic_seconds?`for ${mins(m.memory.traffic_seconds)}`:'not at all']);
+    rows.push(['Tells other cars what it knows',m.interaction&&m.interaction.share_traffic?`yes, within ${m.interaction.range_m} m`:'no'])}
+  gkv(s3,rows);
+}
+function kindSettings(host,k){const s=gsec(host,'All its settings',`agents.${k} in the scenario`), drives=k==='vehicle'||k==='ondemand';      // traffic settings belong to the kinds that drive
+  gkv(s,flat(curCfg().agents[k]).filter(([key,v])=>!(Array.isArray(v)&&!v.length)&&v!==null&&!(v&&typeof v==='object'&&!Array.isArray(v))&&(drives||!/^(observation\.|interaction\.|memory\.traffic_seconds)/.test(key))))}
+function kindLive(host,k){
+  const mk=meta.kinds[k], mine=decisions.filter(d=>d.kind===k), used=mine.filter(d=>d.exercised).length, forced=mine.filter(d=>d.source==='forced').length, color=kindColor(k);
+  host.append(el('h3','',`In this run, up to ${clockText(frames.length?frames[frames.length-1].t:0)}`));
+  host.append(el('div','',mine.length?`Asked ${mine.length} times · chose something other than the default ${used} times`+(forced?` · ${forced} times it had no say and the default applied`:''):'Not asked so far.'));
+  const count=key=>{const c={}; for(const d of mine){const v=key(d); c[v]=(c[v]||0)+1} return c}, byT=count(d=>d.trigger), byA=count(d=>d.decision.action), own=count(d=>d.exercised?d.decision.action:'');
+  const maxT=Math.max(1,...Object.values(byT)), maxA=Math.max(1,...Object.values(byA));
+  host.append(el('div','gsub','Why it was asked'));
+  gtable(host,['Trigger','When that is','Times'],Object.keys(mk.triggers).map(t=>[el('code','',t),mk.triggers[t],[bar(byT[t]||0,maxT,color),String(byT[t]||0)]]));
+  host.append(el('div','gsub','What it chose'));
+  gtable(host,['Action','What it does','Times','Of which its own choice'],Object.keys(mk.actions).map(a=>[el('code','',a),mk.actions[a],[bar(byA[a]||0,maxA,color),String(byA[a]||0)],String(own[a]||0)]));
+  const fr=nowFrame(); if(fr){host.append(el('div','gsub',`Right now, at ${clockText(fr.t,true)} on the map`)); kindNow(host,k,fr)}
+  const b=el('button','linkish',`Show the ${label(k)}'s decisions one by one`); b.onclick=()=>{setView('sim'); setCol('side'); $('filter').value=k; agentFilter=null; refillLog()}; host.append(b);
+}
+function kindNow(host,k,fr){
+  const tally=(rows,i)=>{const c={}; for(const r of rows||[])c[r[i]]=(c[r[i]]||0)+1; return Object.entries(c).map(([s,n])=>`${n} ${String(s).replace(/_/g,' ')}`).join(' · ')||'none on the map'};
+  if(k==='traveler'){const p=fr.stats.people; gkv(host,[['Not travelling yet',p.waiting],['On their way',p.moving],['Arrived',p.done],['At an activity',p.activity],['Gave up',p.gave_up]])}
+  else if(k==='vehicle')gkv(host,[['Cars that have been used',(fr.vehicle||[]).length],['By state',tally(fr.vehicle,3)]]);
+  else if(k==='ondemand')gkv(host,[['Fleet',(fr.ondemand||[]).length],['By state',tally(fr.ondemand,3)]]);
+  else if(k==='bus')gkv(host,[['Vehicles',(fr.bus||[]).length],['Passengers on board',(fr.bus||[]).reduce((a,b)=>a+b[4],0)],['By state',tally(fr.bus,3)]]);
+  else if(k==='evcs')gtable(host,['Station','At','Price (USD/kWh)','Charging','Waiting'],(fr.evcs||[]).map(s=>[s[0],nodeName(s[1]),s[2],`${s[3]} of ${s[5]}`,s[4]]));
+  else if(k==='signal')gtable(host,['Junction','Green for','Vehicles held'],(fr.signal||[]).map(s=>[nodeName(s[1]),s[2]<0?'nobody (changing)':((header.signals[s[0]]||{}).names||[])[s[2]]||'phase '+s[2],s[3]]));
+  else if(k==='operator'){const o=(fr.operator||[])[0]||[]; gkv(host,[['Advisory about slow roads',pill(!!o[1],o[1]?'published':'none')],['Transit priority',pill(!!o[2],o[2]?'on':'off')],['Charge to enter the centre',o[3]?'$'+o[3]:'none']])}
+}
+// ---- the parts that are not agents: each shows what it is made of; the live part says what is happening there
+const PART={
+  scenario(host){const c=curCfg(), s=c.simulation; gkv(gsec(host,'The run'),[['Scenario',c.name],['What it is',c.description],['Clock',`${dayText(0)} to ${dayText(s.duration_seconds)}`],
+    ['Length',mins(s.duration_seconds)],['Time step',s.time_step_seconds+' s'],['Seed',s.seed],['Kinds of agent',(header?Object.keys(header.kinds):meta.scenarios[$('scenario').value].kinds).map(label).join(', ')]])},
+  demand(host){const c=curCfg(), d=c.demand, p=d.params||{}; gkv(gsec(host,'Trips'),[['Travellers',c.agents.traveler.count],['With a car',Math.round(100*c.agents.traveler.car_ownership)+'%'],
+      ['Pattern',d.pattern],['They set out between',`${dayText(d.start_seconds||0)} and ${dayText(d.end_seconds||0.6*c.simulation.duration_seconds)}`],
+      ['Shortest trip',(d.min_trip_m/1000).toFixed(1)+' km'],['Destinations',d.to_pois?'a named place that fits the purpose of the trip':'a node of the network']]);
+    const o=Object.entries(p.origins||{}).sort((a,b)=>b[1]-a[1]), max=o.length?o[0][1]:1;
+    if(o.length)gtable(gsec(host,'Where people live','weights of the origins'),['District','Weight'],o.map(([n,w])=>[nodeName(n),[bar(w,max),String(w)]]))},
+  outcomes(host){const o=metricsNow&&metricsNow.outcomes, v=k=>o?o[k]:'after the run';
+    gtable(gsec(host,'The four measures'),['Measure','What it means','This run'],[['Average waiting time','time travellers wait for transport, per completed trip',o?mins(o.wait_time_s_mean):v()],
+      ['VMT','vehicle miles travelled by cars and transit vehicles',o?Math.round(o.vmt_miles)+' miles':v()],['VHT','vehicle hours travelled: time vehicles spend on the road',o?Math.round(o.vht_hours)+' h':v()],
+      ['Average traffic speed','VMT ÷ VHT',o?o.traffic_speed_mph.toFixed(1)+' mph':v()]])},
+  network(host){const net=curNet(), c=curCfg().network, roads=net.links.filter(l=>l[1]<l[2]), km=roads.reduce((a,l)=>a+l[3],0)/1000;
+    const cls=l=>l[4]>=24?'expressway':l[4]>=16?'bridge or tunnel':'arterial', by={}; for(const l of roads)by[cls(l)]=(by[cls(l)]||0)+1;
+    gkv(gsec(host,'What it is made of'),[['Nodes',net.nodes.length],['Roads',`${roads.length} two-way roads, ${Math.round(km)} km`],['By class',Object.entries(by).map(([k,n])=>`${n} ${k}`).join(' · ')]]);
+    gkv(gsec(host,'Settings','network in the scenario'),flat(c).filter(([k])=>['grid','bridge'].includes(c.type)||!['rows','cols','block_m','speed_mps'].includes(k)).filter(([k,v])=>!(v&&typeof v==='object'&&!Object.keys(v).length)));
+    const d=el('details'); d.append(el('summary','','Every road')); gtable(d,['From','To','Class','Length','Free-flow speed','Lanes each way'],roads.map(l=>[nodeName(l[1]),nodeName(l[2]),cls(l),(l[3]/1000).toFixed(1)+' km',Math.round(l[4]*3.6)+' km/h',l[5]])); gsec(host,'').append(d)},
+  places(host){const ps=header?header.pois:(curCfg().pois||[]).filter(p=>p.node!==undefined);
+    gtable(gsec(host,'The places'),['Place','Type','At','Opens','Closes'],ps.map(p=>[p.name||p.id,p.type,nodeName(p.node),p.opens||'–',p.closes||'–']))},
+  events(host){gsec(host,'Scheduled events').id='gevents'},
+  lines(host){const ls=curCfg().agents.bus.lines||[]; gtable(gsec(host,'The lines'),['Line','Stops, in order','Vehicles','Seats'],ls.map(l=>[l.id,l.stops.map(nodeName).join(' → '),l.buses,l.capacity]))},
+  stations(host){const st=curCfg().agents.evcs.stations||[]; gtable(gsec(host,'The sites'),['Station','At','Chargers','Power'],st.map(s=>[s.id,nodeName(s.node),s.chargers,s.power_kw+' kW']))},
+  lights(host){const c=curCfg().agents.signal, s=gsec(host,'The junctions');
+    if(header)gtable(s,['Junction','Green phases'],Object.values(header.signals).map(x=>[nodeName(x.node),(x.names||[]).join(' · ')]));
+    else gkv(s,[['Junctions',Array.isArray(c.junctions)?c.junctions.map(nodeName).join(', '):c.junctions],['Green in the fixed plan',c.green_seconds+' s per phase']])},
+};
+const EVENT_WHAT={link_condition:e=>`roads at ${Math.round(100*e.factor)}% of their speed: ${(e.links||[]).map(l=>nodeName(l[0])+' → '+nodeName(l[1])).join(', ')}`,
+  weather:e=>`every road at ${Math.round(100*(e.speed_factor||1))}% of its speed`,demand_surge:e=>`${e.trips} extra trips ${e.to?'to':'from'} ${e.poi||nodeName(e.node)}`,
+  poi_closure:e=>`${e.poi} closes`,set_agency:e=>`${label(e.kind)} becomes ${showV(e.agency)}`};
+function renderGuideLive(){
+  const host=$('glive'); if(!host||view!=='guide')return; const fr=nowFrame(), box=el('div','glive'); host.textContent='';
+  if(gsel==='events'){const t=fr?fr.t:-1, ev=curCfg().interventions||[];             // the schedule, with what is happening now
+    const sec=$('gevents'); sec.querySelectorAll('table,.note').forEach(e=>e.remove());
+    if(!ev.length){sec.append(el('div','note','No events: nothing happens to the city except what the agents do.')); return}
+    gtable(sec,['When','Event','What it does','Now'],ev.map(e=>{const a=e.at_seconds||0, b=e.until_seconds, st=t<0?'not started':t<a?'still to come':b===undefined||t<b?'happening':'over';
+      return [dayText(a)+(b!==undefined?' – '+dayText(b):''),e.label||e.type.replace(/_/g,' '),(EVENT_WHAT[e.type]||showV)(e),pill(st==='happening',st)]})); return}
+  if(!header||!fr){box.append(el('h3','','In the run'),el('div','note','Nothing is running yet. Press Run on the Simulate page, then come back: this box shows what this part is doing as the run goes on.')); host.append(box); return}
+  if(KINDS.includes(gsel))kindLive(box,gsel);
+  else if(gsel==='network'){box.append(el('h3','',`Right now, at ${clockText(fr.t,true)} on the map`)); const slow=Object.entries(fr.slow_links||{}), busy=Object.keys(fr.busy_links||{}).length, L=Object.fromEntries(header.network.links.map(l=>[l[0],l]));
+    gkv(box,[['Traffic moves at',fr.stats.speed===null?'no cars on the road':Math.round(100*fr.stats.speed)+'% of free-flow speed'],['Vehicles on the road',fr.stats.on_road],['Roads slowed by congestion',busy],
+      ['Roads hit by an event',slow.length?slow.map(([id,f])=>`${nodeName(L[id][1])} → ${nodeName(L[id][2])} at ${Math.round(100*f)}%`).join(', '):'none']])}
+  else if(gsel==='lines'){box.append(el('h3','',`Right now, at ${clockText(fr.t,true)}`)); const by={}; for(const b of fr.bus||[]){(by[b[5]]=by[b[5]]||[0,0])[0]++; by[b[5]][1]+=b[4]}
+    gtable(box,['Line','Vehicles out','Passengers on board'],Object.entries(by).map(([l,[n,p]])=>[l,n,p])); if(metricsNow&&metricsNow.bus)box.append(el('div','note',`Boardings in the whole run: ${metricsNow.bus.boardings}`))}
+  else if(gsel==='stations'){box.append(el('h3','',`Right now, at ${clockText(fr.t,true)}`)); kindNow(box,'evcs',fr)}
+  else if(gsel==='lights'){box.append(el('h3','',`Right now, at ${clockText(fr.t,true)}`)); kindNow(box,'signal',fr)}
+  else if(gsel==='demand'||gsel==='scenario'){box.append(el('h3','',`Right now, at ${clockText(fr.t,true)}`)); kindNow(box,'traveler',fr)}
+  else if(gsel==='places'){const p=metricsNow&&metricsNow.pois; box.append(el('h3','','In this run'),el('div','',p?`${p.visits} visits to named places${p.found_closed?`, ${p.found_closed} found the place closed`:''}.`:'Visits are counted when the run has finished.'))}
+  else if(gsel==='outcomes'){box.append(el('h3','',`Right now, at ${clockText(fr.t,true)}`)); gkv(box,[['Traffic moves at',fr.stats.speed===null?'no cars on the road':Math.round(100*fr.stats.speed)+'% of free-flow speed'],['Travellers arrived',`${fr.stats.people.done} of ${Object.values(fr.stats.people).reduce((a,b)=>a+b,0)}`]]);
+    if(!metricsNow)box.append(el('div','note','The four measures are final when the run has finished.'))}
+  host.append(box);
+}
+
 // ---------------------------------------------------------------- start-up
 (async()=>{readTheme(); matchMedia('(prefers-color-scheme: dark)').addEventListener('change',readTheme); requestAnimationFrame(draw);
   meta=await api('/api/meta'); $('scenario').innerHTML=Object.keys(meta.scenarios).map(s=>`<option>${s}</option>`).join('');
@@ -609,6 +829,9 @@ function draw(){
     +'<option value="mock">offline stand-in (not a language model)</option>';
   $('backend').value='mock'; $('backend').onchange=backendFields;
   $('scenario').onchange=()=>{extra={}; agentRows(); renderExtras()}; agentRows(); $('run').onclick=start;
+  document.querySelectorAll('#views button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+  document.querySelectorAll('#cols button').forEach(b=>b.onclick=()=>setCol(b.dataset.c));
+  setCol('setup'); setInterval(()=>{if(view==='guide')renderGuideLive()},700);
   $('send').onclick=sendChat; $('ask').onkeydown=e=>{if(e.key==='Enter')sendChat()}; $('stop').onclick=()=>run&&api(`/api/run/${run}/stop`,{});
   $('play').onclick=()=>{playing=!playing; $('play').textContent=playing?'Pause':'Play'}; $('scrub').oninput=e=>{head=+e.target.value; playing=false; $('play').textContent='Play'};
   $('filter').onchange=refillLog; $('onlyused').onchange=refillLog; $('tstable').ontoggle=()=>$('tstable').open&&renderTable();

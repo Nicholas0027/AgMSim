@@ -692,6 +692,10 @@ def test_web_interface_runs_without_a_server():
     info = json.loads(browser.request("/api/meta"))
     assert info["online"] and info["llm_presets"]["deepseek"]["key_env"] == "DEEPSEEK_API_KEY"
     assert list(info["scenarios"]) == ["montreal"]                     # the testbed is the one scenario of the page
+    # what the guide shows before anything has run: every setting of the scenario, its network, and what each kind is asked and can do
+    testbed, car = info["scenarios"]["montreal"], info["kinds"]["vehicle"]
+    assert testbed["config"]["agents"]["vehicle"]["battery"]["capacity_kwh"] == 60 and len(testbed["network"]["nodes"]) == 25
+    assert set(car["triggers"]) == {"route", "charge", "parked"} and "choose_route" in car["actions"] and "reroute" in car["permissions"]
     quick = ["simulation.duration_seconds=2400", "agents.traveler.count=150"]
     run_id = json.loads(browser.request("/api/run", json.dumps({"scenario": "montreal", "overrides": quick})))["id"]
     assert RUNS[run_id].thread is None

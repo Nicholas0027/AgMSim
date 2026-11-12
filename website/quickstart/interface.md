@@ -9,6 +9,11 @@ served from your machine.
 
 ## What the page shows
 
+- **Guide** (top right). Everything that is in the simulation, one entry each: the run, the trips, the outcome
+  measures, the road network, places, events, transit lines, charging sites, junctions with lights, and every
+  kind of agent. Click an entry to see what it is, what it may do (its functions, with those switched on at its
+  level marked), all its settings, and what it is doing in the run: how often it was asked and why, what it
+  chose, and its state at the moment shown on the map. A kind's name in the Agents table opens its entry.
 - **Assistant.** Say what you want to run ("vehicles at L3 with 30% staying at L0, slow the Champlain Bridge
   from 07:30 to 08:30, then run it") and a language model fills in the form. Its proposal is checked like any
   configuration before it is used. It needs a real language model: on your machine a hosted model whose key

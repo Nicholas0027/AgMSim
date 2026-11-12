@@ -24,6 +24,7 @@ from . import kinds as _kinds, policies as _policies  # noqa: F401
 from . import assistant
 from .agency import LEVEL_NAMES
 from .config import DRIVING_KINDS, LLM_PRESETS, TESTBED, Config, list_scenarios
+from .network import build_network
 from .engine import Simulation
 from .kinds.base import KINDS
 from .llm import LLM_BACKENDS, load_env_file
@@ -179,7 +180,9 @@ def meta(online: bool = False) -> dict:
         kind = KINDS.get(name)
         kinds[name] = {"title": kind.title, "side": kind.side, "policies": available_policies(name),
                        "levels": {lvl: list(perms) for lvl, perms in sorted(kind.agency.levels.items())},
-                       "permissions": kind.agency.permissions}
+                       "permissions": kind.agency.permissions,
+                       "triggers": dict(getattr(kind, "triggers", {})),      # why an agent of this kind is asked
+                       "actions": dict(getattr(kind, "actions", {}))}        # what it can then choose
     scenarios = {}
     for name in list_scenarios():
         cfg = Config.load(name)
@@ -188,7 +191,9 @@ def meta(online: bool = False) -> dict:
                            "agents": {k: {"use_llm": getattr(cfg.agents, k).use_llm,
                                           "policy": getattr(cfg.agents, k).non_llm_policy,
                                           "agency": getattr(cfg.agents, k).agency,
-                                          "knows": _knows(getattr(cfg.agents, k), k)} for k in cfg.active_kinds()}}
+                                          "knows": _knows(getattr(cfg.agents, k), k)} for k in cfg.active_kinds()},
+                           # for the guide: every setting of the scenario, and its network, before anything has run
+                           "config": cfg.to_dict(), "network": build_network(cfg.network, cfg.base_dir).to_dict()}
     if not online:                      # so the page can tell which hosted models are ready to use on this machine
         load_env_file()
         load_env_file(Path(__file__).resolve().parent.parent)
