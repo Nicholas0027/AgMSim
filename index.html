@@ -571,7 +571,9 @@ function draw(){
     g.strokeStyle=theme.signal; g.lineWidth=3.5;
     for(const u of info.from[sg[2]]){const a=P(...nodes[u]), len=Math.hypot(a[0]-c[0],a[1]-c[1])||1; g.beginPath(); g.moveTo(c[0],c[1]); g.lineTo(c[0]+(a[0]-c[0])/len*9,c[1]+(a[1]-c[1])/len*9); g.stroke()}}
   g.font='10px system-ui';
-  for(const poi of header.pois||[]){const c=P(...nodes[poi.node]); g.strokeStyle=theme.ink2; g.lineWidth=1.5; g.strokeRect(c[0]-5,c[1]-5,10,10); g.fillStyle=theme.ink2; g.fillText(poi.name,c[0],c[1]+17)}
+  const names=header.network.names;      // a network with named nodes (the Montreal testbed): the districts are labelled, places only marked
+  for(const poi of header.pois||[]){const c=P(...nodes[poi.node]); g.strokeStyle=theme.ink2; g.lineWidth=1.5; g.strokeRect(c[0]-5,c[1]-5,10,10); if(!names){g.fillStyle=theme.ink2; g.fillText(poi.name,c[0],c[1]+17)}}
+  if(names)for(const [n,x,y] of header.network.nodes){const c=P(x,y); g.fillStyle=theme.ink2; g.fillText(names[n],c[0],c[1]+17)}
   g.font='10.5px system-ui';
   for(const stops of Object.values(header.lines||{}))for(const n of stops){const p=P(...nodes[n]); g.beginPath(); g.arc(p[0],p[1],6,0,7); g.strokeStyle=theme.bus; g.lineWidth=1.5; g.stroke()}
   for(const st of fr.evcs||[]){const p=P(...nodes[st[1]]); g.fillStyle=theme.evcs; g.beginPath(); g.roundRect(p[0]-7,p[1]-7,14,14,3); g.fill(); g.fillStyle=theme.ink2; g.fillText(`${st[0]} $${st[2]} ${st[3]}/${st[5]}+${st[4]}`,p[0],p[1]-11)}
