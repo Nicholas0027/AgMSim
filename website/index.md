@@ -79,17 +79,6 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ".[de
 
 See [](quickstart/installation.md).
 
-## Related work
-
-1. J. Yu et al. *Agentic Vehicles for Human-Centered Mobility.* [arXiv:2507.04996](https://arxiv.org/abs/2507.04996).
-   The levels of agency used here.
-2. J. Piao et al. *AgentSociety: Large-Scale Simulation of LLM-Driven Generative Agents Advances Understanding
-   of Human Behaviors and Society.* [arXiv:2502.08691](https://arxiv.org/abs/2502.08691).
-3. A. Horni, K. Nagel, K. W. Axhausen (eds.). *The Multi-Agent Transport Simulation MATSim.* Ubiquity Press, 2016.
-   The day plans of travellers follow its action mechanism.
-4. L. J. LeBlanc, E. K. Morlok, W. P. Pierskalla. *An efficient approach to solving the road network equilibrium
-   traffic assignment problem.* Transportation Research 9(5), 1975. The Sioux Falls network.
-
 ## Status
 
 An early prototype: see [](status.md). Questions and problems:
