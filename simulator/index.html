@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgMSim</title>
+<style>
+/* Colour by role. Kinds of agent keep one hue everywhere (map, charts, lists); traveller stages are steps of
+   the travellers' own hue; roads are neutral so that only agents carry colour. Light and dark are both chosen. */
+:root{color-scheme:light;
+  --page:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;
+  --ring:rgba(11,11,11,.10);--wash:rgba(11,11,11,.045);--accent:#2a78d6;--critical:#d03b3b;--track:#cde2fb;
+  --k-traveler:#2a78d6;--k-vehicle:#eb6834;--k-bus:#1baf7a;--k-evcs:#eda100;--k-operator:#e87ba4;--k-signal:#008300;--k-ondemand:#6250d6;--k-other:#898781;
+  --p-rest:#86b6ef;--p-move:#2a78d6;--p-done:#104281;--road:#c3c2b7;--road-busy:#3a3936;--parked:#a9a79f}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;
+  --page:#0d0d0d;--surface:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--muted:#898781;--grid:#2c2c2a;--axis:#383835;
+  --ring:rgba(255,255,255,.10);--wash:rgba(255,255,255,.06);--accent:#3987e5;--critical:#d03b3b;--track:#0d366b;
+  --k-traveler:#3987e5;--k-vehicle:#d95926;--k-bus:#199e70;--k-evcs:#c98500;--k-operator:#d55181;--k-signal:#008300;--k-ondemand:#9085e9;--k-other:#898781;
+  --p-rest:#86b6ef;--p-move:#3987e5;--p-done:#184f95;--road:#383835;--road-busy:#d8d7cf;--parked:#5c5b57}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:13px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{height:48px;padding:0 18px;display:flex;gap:14px;align-items:center;border-bottom:1px solid var(--ring);background:var(--surface)}
+header h1{font-size:16px;margin:0;letter-spacing:-.01em}header .tag{color:var(--ink2)}header a{color:var(--accent);text-decoration:none;white-space:nowrap}
+header a:hover{text-decoration:underline}
+main{display:grid;grid-template-columns:336px minmax(440px,1fr) 400px;gap:12px;padding:12px;height:calc(100vh - 48px)}
+main>*{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--surface);border:1px solid var(--ring);border-radius:10px;padding:14px}
+#setup{display:block}
+h2{font-size:13px;font-weight:600;margin:16px 0 8px}h2:first-child{margin-top:0}h2 .plain{font-weight:400;color:var(--ink2)}
+h3{font-size:12px;font-weight:600;margin:0}
+label{display:block;color:var(--ink2);margin:8px 0 3px;font-size:12px}
+select,input,button{font:inherit;color:var(--ink);background:var(--page);border:1px solid var(--ring);border-radius:7px;padding:6px 8px}
+select,input[type=text],input[type=number],input[type=password]{width:100%}
+select:focus-visible,input:focus-visible,button:focus-visible,#charts:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button{cursor:pointer}button:hover{background:var(--wash)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}button.primary:hover{filter:brightness(1.07)}
+table{width:100%;border-collapse:collapse}td,th{padding:4px 4px;text-align:left;vertical-align:middle}
+th{color:var(--muted);font-weight:500;font-size:12px}td.num{text-align:right;font-variant-numeric:tabular-nums}
+.note{color:var(--ink2);font-size:12px}.muted{color:var(--muted)}
+.row{display:flex;gap:8px;align-items:center;margin-top:10px}.row>*{flex:1}
+#agents td:first-child{font-weight:600;white-space:nowrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;flex:none}
+.fb{margin-top:4px;color:var(--ink2);font-size:11.5px}.fb select{width:auto;padding:2px 4px}
+#know td:first-child{font-weight:600;white-space:nowrap}#know select,#know input{padding:4px 5px;font-size:12px}#know input{width:3.6em}
+#know td.sub{font-weight:400;white-space:normal;padding-top:0}
+#know .trio{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 6px 14px}#know .trio label{flex:1 1 92px;min-width:0;margin:0;font-size:11.5px;display:flex;flex-direction:column;gap:2px}
+#know td.num{color:var(--ink2);font-size:12px;text-align:left;white-space:nowrap}
+#know label.why{display:inline-flex;align-items:center;gap:3px;margin:0 0 0 6px;font-size:12px}#know label.why input{width:auto;padding:0}
+#llmsec{display:none}#llmnote{margin-top:6px}
+#chat{max-height:190px;overflow:auto;display:flex;flex-direction:column;gap:5px}
+.msg{padding:6px 9px;border-radius:9px;max-width:94%;font-size:12.5px;overflow-wrap:anywhere}
+.msg.me{align-self:flex-end;background:var(--accent);color:#fff}.msg.it{align-self:flex-start;background:var(--wash)}.msg.err{color:var(--critical)}
+#extras .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}#extras .note{margin-top:8px}
+#status{color:var(--ink2);margin-top:10px;font-size:12px}#status.err{color:var(--critical)}
+/* map */
+#mapcard{flex:1 1 430px;min-height:400px;display:flex;flex-direction:column;padding:10px}
+canvas{flex:1;width:100%;min-height:0;display:block}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;color:var(--ink2);font-size:12px;align-items:center}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.legend i.sq{border-radius:2px}.legend i.ln{width:14px;height:3px;border-radius:2px;vertical-align:3px}
+.legend i.ring{background:none;border:2px solid}.legend i.box{background:none;border:1.5px solid var(--ink2);border-radius:2px}
+.legend i.ramp{width:34px;height:4px;border-radius:2px;vertical-align:3px;background:linear-gradient(90deg,var(--road),var(--road-busy))}
+#bar{display:flex;gap:8px;align-items:center;padding-top:8px}#bar input[type=range]{flex:1;padding:0;border:0;background:none;accent-color:var(--accent)}
+#clock{min-width:132px;color:var(--ink2);font-variant-numeric:tabular-nums;text-align:right}
+/* charts over the run */
+#timecard{flex:none}
+.cardhead{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}.cardhead h2{margin:0}
+.chead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:10px 0 2px}
+#charts{border-radius:6px;cursor:crosshair}#charts.empty{display:none}
+svg.ts{display:block;width:100%;overflow:visible}
+svg text{font:10.5px system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--muted);font-variant-numeric:tabular-nums}
+svg text.lab{fill:var(--ink2)}
+.gridl{stroke:var(--grid);stroke-width:1}.axisl{stroke:var(--axis);stroke-width:1}
+.ln{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.cross{stroke:var(--muted);stroke-width:1;visibility:hidden}.playhead{stroke:var(--ink);stroke-width:1}
+details{margin-top:10px}summary{cursor:pointer;color:var(--ink2);font-size:12px}details table{margin-top:6px;font-size:12px}
+/* tooltip */
+#tip{position:fixed;z-index:10;pointer-events:none;background:var(--surface);border:1px solid var(--ring);border-radius:8px;
+  box-shadow:0 6px 24px rgba(0,0,0,.16);padding:8px 10px;font-size:12px;min-width:150px;max-width:280px}
+#tip .th{color:var(--ink2);margin-bottom:4px}#tip .tg{color:var(--muted);margin-top:6px;font-size:11px}
+#tip .tr{display:flex;align-items:center;gap:6px;white-space:nowrap}#tip .tr b{font-weight:600;min-width:26px;text-align:right;font-variant-numeric:tabular-nums}
+#tip .tr span{color:var(--ink2)}#tip .key{width:10px;height:2px;border-radius:1px;flex:none}
+/* results */
+#tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{border:1px solid var(--ring);border-radius:8px;padding:9px 11px;background:var(--page)}
+.tile .tl{color:var(--ink2);font-size:12px}.tile .tv{font-size:22px;font-weight:600;letter-spacing:-.01em;line-height:1.25}.tile .ts{color:var(--muted);font-size:11.5px}
+.seg{display:flex;gap:2px;height:28px;margin:6px 0}.seg div{border-radius:4px;color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;padding-left:7px;min-width:3px;overflow:visible;white-space:nowrap}
+.meters{display:grid;grid-template-columns:auto 1fr auto;gap:7px 10px;align-items:center;margin-top:6px}
+.meters .mk{white-space:nowrap}.meters .mk small{color:var(--muted)}
+.meter{height:8px;border-radius:4px;background:var(--track);overflow:hidden}.meter div{height:100%;border-radius:4px;background:var(--accent)}
+.meters .mv{color:var(--ink2);font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px}
+/* decisions */
+#decisions{flex:none}.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}.filters select{width:auto}
+.filters label{display:flex;gap:5px;align-items:center;margin:0}
+.chip{border:1px solid var(--ring);border-radius:999px;padding:2px 9px;background:var(--page);font-size:12px}
+#log{max-height:232px;overflow:auto;border-top:1px solid var(--grid)}
+#log .dec{display:flex;gap:6px;align-items:baseline;padding:4px 4px;border-bottom:1px solid var(--grid);cursor:pointer;font-size:12.5px}
+#log .dec:hover,#log .dec.on{background:var(--wash)}#log .dec.on{box-shadow:inset 2px 0 0 var(--accent)}
+#log .t{color:var(--muted);font-variant-numeric:tabular-nums;font-size:11.5px;flex:none}#log .dot{align-self:center;margin:0}
+#log .who{font-weight:600;flex:none}#log .what{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink2)}
+#log .what b{color:var(--ink);font-weight:600}#log .src{color:var(--muted);font-size:11.5px;flex:none}
+/* selected decision */
+.facts{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;margin:8px 0}.facts dt{color:var(--muted)}.facts dd{margin:0;overflow-wrap:anywhere}
+.facts code{background:var(--wash);border-radius:4px;padding:0 4px;font-size:12px}
+pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px solid var(--ring);border-radius:7px;padding:8px;max-height:260px;overflow:auto;font-size:11.5px;margin:6px 0 0}
+.linkish{background:none;border:0;padding:0;color:var(--accent);cursor:pointer}.linkish:hover{text-decoration:underline;background:none}
+@media (max-width:1180px){main{grid-template-columns:1fr;height:auto}main>*{overflow:visible}#mapcard{flex:none}canvas{height:420px;flex:none}header .tag{display:none}}
+</style>
+</head>
+<body>
+<header><h1>AgMSim</h1><span class="tag">Agentic Mobility Simulator: who decides, and with how much authority, is set for every kind of agent</span></header>
+<main>
+<section id="setup" class="card">
+  <h2>Assistant <span class="plain">say what you want to run</span></h2>
+  <div id="chat" aria-live="polite"></div>
+  <div class="row" style="margin-top:6px"><input id="ask" type="text" aria-label="Message to the assistant"
+    placeholder="e.g. 300 travellers, vehicles at L3, slow the bridge from 17:30"><button id="send" style="flex:none">Send</button></div>
+  <div class="note muted" style="margin-top:5px">It fills in the form below from your words, using the language model chosen further down. Nothing runs until you press Run or ask it to.</div>
+  <h2>Scenario</h2>
+  <select id="scenario" aria-label="Scenario"></select><div class="note" id="desc" style="margin-top:5px"></div>
+  <div class="row"><div><label for="seed">Seed</label><input id="seed" type="number"></div>
+    <div><label for="count">Travellers</label><input id="count" type="number" min="1"></div></div>
+  <h2>Agents</h2>
+  <table id="agents"><thead><tr><th>Kind</th><th>Decided by</th><th>Agency</th></tr></thead><tbody></tbody></table>
+  <div class="note" style="margin-top:6px">Every kind of agent is decided by one model: a built-in one, or a language model (LLM). Agency sets what it is allowed to decide.</div>
+  <div class="note muted" id="levelnote" style="margin-top:4px"></div>
+  <h2>What they know <span class="plain">memory, observation, interaction</span></h2>
+  <table id="know"><thead><tr><th>Kind</th><th title="How many of its own latest decisions and outcomes it is shown when it decides, and whether each comes with the reason given for it">Recalls its last</th></tr></thead><tbody></tbody></table>
+  <div class="note" style="margin-top:6px">Agency says what a kind may decide; this says what it has to go on. Every decision model of a kind is handed the same. Kinds that find their own way through traffic also have a sight, a memory for slow roads, and other cars to hear from.</div>
+  <div id="extras"></div>
+  <div id="llmsec">
+    <h2>Language model <span class="plain">for the assistant and the kinds decided by LLM</span></h2>
+    <select id="backend" aria-label="Language model"></select>
+    <div id="remote"><label for="base_url">Base URL</label><input id="base_url" type="text" value="http://127.0.0.1:8089/v1">
+      <label for="model">Model</label><input id="model" type="text" value="Qwen/Qwen2.5-7B-Instruct"></div>
+    <div id="keybox"><label id="keylabel" for="apikey">Your API key for this provider</label>
+      <input id="apikey" type="password" autocomplete="off" spellcheck="false" placeholder="paste your own key"></div>
+    <div class="note" id="llmnote"></div>
+  </div>
+  <div class="row"><button class="primary" id="run">Run</button><button id="stop">Stop</button></div>
+  <div id="status">Ready.</div>
+</section>
+
+<div id="centre">
+  <section id="mapcard" class="card">
+    <canvas id="cv" aria-label="Map of the network with agents"></canvas>
+    <div class="legend" id="maplegend" style="padding-top:6px">
+      <span><i style="background:var(--k-vehicle)"></i>car driving</span>
+      <span><i class="ring" style="border-color:var(--k-vehicle)"></i>car charging</span>
+      <span><i style="background:var(--parked)"></i>car parked</span>
+      <span><i style="background:var(--k-ondemand)"></i>on-demand car with a passenger</span>
+      <span><i class="ring" style="border-color:var(--k-ondemand)"></i>… free or on its way</span>
+      <span><i class="sq" style="background:var(--k-bus)"></i>bus</span>
+      <span><i class="ln" style="background:var(--k-signal)"></i>traffic light: who has green</span>
+      <span><i style="background:var(--p-move)"></i>person on foot or waiting</span>
+      <span><i style="background:var(--p-rest)"></i>person at an activity</span>
+      <span><i class="box"></i>place</span>
+      <span><i class="ramp"></i>road: free to slow</span>
+      <span><i class="ln" style="background:var(--critical)"></i>! incident</span>
+    </div>
+    <div id="bar"><button id="play">Pause</button><input id="scrub" type="range" min="0" max="0" value="0" aria-label="Moment shown">
+      <select id="speed" style="width:74px" aria-label="Playback speed"><option value="1">1×</option><option value="4" selected>4×</option><option value="16">16×</option></select>
+      <span id="clock">–</span></div>
+  </section>
+  <section id="timecard" class="card">
+    <div class="cardhead"><h2>Over the run</h2><span class="note" id="timehint">Charts appear once a run starts.</span></div>
+    <div id="charts" class="empty" tabindex="0" role="group" aria-label="Charts over the run. Left and right arrows move through time, Enter shows that moment on the map.">
+      <div id="evwrap"><div class="chead"><h3>External events</h3><span class="note">what happens to the town during the run</span></div><div id="ev"></div></div>
+      <div class="chead"><h3>Travellers by stage</h3><span class="legend" id="lg1"></span></div><div id="c1"></div>
+      <div class="chead"><h3>Traffic speed</h3><span class="note">cars on the road, as a share of free-flow speed</span></div><div id="c2"></div>
+      <div class="chead"><h3>Decisions asked</h3><span class="legend" id="lg3"></span></div><div id="c3"></div>
+    </div>
+    <details id="tstable"><summary>Show as table</summary><div></div></details>
+  </section>
+</div>
+
+<div id="side">
+  <section id="results" class="card">
+    <h2>Results</h2>
+    <div id="metrics" class="note">Run a scenario to see results.</div>
+  </section>
+  <section id="decisions" class="card">
+    <h2>Decisions</h2>
+    <div class="filters"><select id="filter" aria-label="Kind of agent"><option value="">all kinds</option></select>
+      <label><input type="checkbox" id="onlyused">only where authority was used</label><span id="agentchip"></span></div>
+    <div id="log"><div class="note" style="padding:8px 4px">Every decision of the run is listed here, newest first. Click one to see what the agent saw and chose.</div></div>
+  </section>
+  <section id="selected" class="card">
+    <h2>Selected decision</h2>
+    <div id="story" class="note">Click a decision above.</div>
+  </section>
+</div>
+</main>
+<div id="tip" hidden></div>
+<script src="backend.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const el=(tag,cls,text)=>{const e=document.createElement(tag); if(cls)e.className=cls; if(text!==undefined)e.textContent=text; return e};
+const svgEl=(tag,attrs,text)=>{const e=document.createElementNS('http://www.w3.org/2000/svg',tag); for(const k in attrs)e.setAttribute(k,attrs[k]); if(text!==undefined)e.textContent=text; return e};
+const KINDS=['traveler','vehicle','bus','evcs','operator','signal','ondemand'];   // fixed order: a kind keeps its colour everywhere
+const KIND_LABEL={traveler:'traveller',vehicle:'private car',evcs:'charging station',operator:'orchestrator',signal:'traffic light',ondemand:'on-demand car'};
+const label=k=>KIND_LABEL[k]||k;            // what a kind is called on the page; settings keep the kind's own name
+const kindColor=k=>`var(--k-${KINDS.includes(k)?k:'other'})`;
+const MODEL_HINT={rule:'built-in: fixed behaviour',algorithm:'built-in: computes its best action',utility:'built-in: a choice model'};
+const MODE_COLOR={walk:'var(--k-traveler)',car:'var(--k-vehicle)',bus:'var(--k-bus)','car+bus':'var(--k-evcs)',ride:'var(--k-ondemand)'};
+let meta, run=null, header=null, frames=[], decisions=[], head=0, playing=true, timer=null, polling=false;
+let nodes={}, box=null, clock0=0, dt=1, horizon=1, theme={}, model=null, hoverT=null, selected=null, story=null, agentFilter=null;
+let chat=[], extra={}, chatUsed=false;      // the conversation with the assistant; settings it made that the form has no control for
+async function api(path,body){if(window.agmsimBackend)return window.agmsimBackend(path,body);   // online demo: the simulator runs in this page
+  const r=await fetch(path,body?{method:'POST',body:JSON.stringify(body)}:{});return r.json()}
+const dayClock=v=>{if(typeof v!=='string')return +v||0; const p=v.split(':').map(Number); return p[0]*3600+p[1]*60+(p[2]||0)};
+const two=n=>String(Math.floor(n)).padStart(2,'0');
+const clockText=(t,secs)=>{const d=clock0+t; return clock0||horizon>=3600?`${two(d/3600)}:${two(d%3600/60)}${secs?':'+two(d%60):''}`:`${two(t/60)}:${two(t%60)}`};
+const mins=s=>s>=60?`${(s/60).toFixed(1)} min`:`${Math.round(s)} s`;
+// ticks of a time axis: round times of day, at most six of them
+const timeTicks=()=>{const step=[60,120,300,600,900,1800,3600,7200,14400].find(s=>horizon/s<=6)||28800, out=[]; for(let c=Math.ceil(clock0/step)*step;c<=clock0+horizon+1e-6;c+=step)out.push(c-clock0); return out};
+const tickLabel=(svg,x,y,t,left,right)=>svg.append(svgEl('text',{x,y,'text-anchor':x-left<14?'start':right-x<14?'end':'middle'},clockText(t)));
+const frameAt=t=>{let lo=0,hi=frames.length-1; while(lo<hi){const m=(lo+hi+1)>>1; if(frames[m].t<=t)lo=m; else hi=m-1} return lo};
+const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const mix=(a,b,t)=>`rgb(${a.map((x,i)=>Math.round(x+(b[i]-x)*t)).join(',')})`;
+function readTheme(){const cs=getComputedStyle(document.documentElement), v=n=>cs.getPropertyValue(n).trim();
+  theme={surface:v('--surface'),ink:v('--ink'),ink2:v('--ink2'),muted:v('--muted'),road:rgb(v('--road')),busy:rgb(v('--road-busy')),critical:v('--critical'),
+    vehicle:v('--k-vehicle'),bus:v('--k-bus'),evcs:v('--k-evcs'),signal:v('--k-signal'),ondemand:v('--k-ondemand'),rest:v('--p-rest'),move:v('--p-move'),parked:v('--parked')}}
+
+// ---------------------------------------------------------------- setup form
+function agentRows(){
+  const sc=meta.scenarios[$('scenario').value], tb=$('agents').tBodies[0]; tb.textContent='';
+  $('desc').textContent=sc.description; $('seed').value=sc.seed; $('count').value=sc.travelers;
+  $('filter').innerHTML='<option value="">all kinds</option>'+sc.kinds.map(k=>`<option value="${k}">${label(k)}</option>`).join('');
+  for(const k of sc.kinds){const kd=meta.kinds[k], a=sc.agents[k], tr=tb.insertRow();
+    const lvl=typeof a.agency==='string'?a.agency:'L0', pol=kd.policies.filter(p=>p!=='llm'&&p!=='remote');
+    tr.innerHTML=`<td title="${kd.title}"><span class="dot" style="background:${kindColor(k)}"></span>${label(k)}</td>
+    <td><select data-k="${k}" data-f="model" aria-label="${k} decided by">${pol.map(p=>`<option value="${p}" title="${MODEL_HINT[p]||'built-in'}" ${!a.use_llm&&p===a.policy?'selected':''}>${p} (built-in)</option>`).join('')}<option value="llm" title="a language model, set below" ${a.use_llm?'selected':''}>LLM (language model)</option></select>
+      <div class="fb">if its reply is unusable: <select data-k="${k}" data-f="fallback" aria-label="${k} fallback">${pol.map(p=>`<option ${p===a.policy?'selected':''}>${p}</option>`).join('')}</select></div></td>
+    <td><select data-k="${k}" data-f="agency" aria-label="${k} agency level">${Object.keys(kd.levels).map(l=>`<option ${l===lvl?'selected':''} title="${kd.levels[l].join(', ')||'no authority'}">${l}</option>`).join('')}</select></td>`}
+  tb.querySelectorAll('select[data-f=model]').forEach(e=>e.onchange=llmSection); llmSection();
+  const kb=$('know').tBodies[0]; kb.textContent='';                 // what each kind has to go on
+  for(const k of sc.kinds){const m=sc.agents[k].knows, tr=kb.insertRow(), opt=(v,t,cur)=>`<option value="${v}" ${String(v)===String(cur)?'selected':''}>${t}</option>`;
+    tr.innerHTML=`<td><span class="dot" style="background:${kindColor(k)}"></span>${label(k)}</td>
+    <td class="num"><input type="number" min="0" max="20" value="${m.decisions}" data-k="${k}" data-f="decisions" aria-label="${k}: own decisions recalled"> decisions
+      <label class="why" title="Each remembered decision comes with the reason given for it at the time"><input type="checkbox" data-k="${k}" data-f="reasons" ${m.reasons?'checked':''}> and why</label></td>`;
+    if(!m.drives)continue;
+    const keep=[...new Set([0,120,600,1800,m.traffic_seconds||0])].sort((a,b)=>a-b), sub=kb.insertRow();
+    sub.innerHTML=`<td colspan="2" class="sub"><div class="trio">
+      <label title="How much of current traffic it sees for itself">Sees traffic<select data-k="${k}" data-f="traffic">${opt('none','nothing',m.traffic)}${opt('local',`${m.radius_m} m around`,m.traffic)}${opt('global','every road',m.traffic)}</select></label>
+      <label title="How long a slow road it saw or was told about stays with it">Keeps it<select data-k="${k}" data-f="keep">${keep.map(x=>opt(x,x?(x%60?x+' s':x/60+' min'):'not at all',m.traffic_seconds)).join('')}</select></label>
+      <label title="Cars in range of each other pass on what they know about slow roads">Tells others<select data-k="${k}" data-f="share">${opt('false','nobody',m.share_traffic)}${opt('true',`within ${m.range_m} m`,m.share_traffic)}</select></label></div></td>`}
+  kb.querySelectorAll('[data-f]').forEach(e=>e.onchange=()=>{delete extra[`agents.${e.dataset.k}.${KNOW_KEY[e.dataset.f]}`]; renderExtras()});
+  tb.querySelectorAll('select[data-f=agency]').forEach(e=>e.onchange=()=>{delete extra[`agents.${e.dataset.k}.agency`]; renderExtras()});
+  $('levelnote').textContent=Object.entries(meta.level_names).map(([k,v])=>`${k} ${v}`).join(' · ');
+}
+// Each kind has exactly one decision model. The language-model settings appear only when some kind uses one.
+function llmSection(){
+  let any=false;
+  document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const on=e.value==='llm'; any=any||on; e.parentNode.querySelector('.fb').style.display=on?'block':'none'});
+  $('llmsec').style.display=any||chatUsed?'block':'none'; backendFields();
+}
+function backendFields(){
+  const b=$('backend').value, preset=b.startsWith('preset:')?meta.llm_presets[b.slice(7)]:null, other=!preset&&b!=='mock';
+  $('remote').style.display=other?'block':'none';
+  $('keybox').style.display=meta.online&&(other||(preset&&preset.key_env))?'block':'none';
+  $('keylabel').textContent=other?'API key (leave empty if the server needs none)':'Your API key for this provider';
+  $('llmnote').textContent=b==='mock'?'The offline stand-in is not a language model: it lets a built-in model choose and answers in the same format, so the LLM path can be tried without one.'
+    :!meta.online?(preset&&preset.key_env?`The key is read from ${preset.key_env} in the .env file of the project folder.`:'')
+    :preset&&!preset.key_env?`Calls go from your browser to ${preset.base_url}: that server has to be running on your own machine and accept requests from web pages.`
+    :`The key stays in this browser tab and is sent only to ${preset?preset.base_url:'the address above'}. It is not saved anywhere. Calls are made one at a time, so a run takes minutes, and they are billed to your key.`;
+}
+const control=(k,f)=>document.querySelector(`#agents select[data-f=${f}][data-k="${k}"]`);
+const KNOW_KEY={decisions:'memory.decisions',reasons:'memory.reasons',traffic:'observation.traffic',keep:'memory.traffic_seconds',share:'interaction.share_traffic'};
+const knowControl=(k,f)=>document.querySelector(`#know [data-f=${f}][data-k="${k}"]`);
+function formSettings(){                    // everything the form sets now, as {key: value}; what the assistant added on top wins
+  const out={'simulation.seed':+$('seed').value,'agents.traveler.count':+$('count').value};
+  document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const k=e.dataset.k, on=e.value==='llm';
+    out[`agents.${k}.use_llm`]=on; out[`agents.${k}.non_llm_policy`]=on?control(k,'fallback').value:e.value; out[`agents.${k}.agency`]=control(k,'agency').value});
+  document.querySelectorAll('#know [data-f]').forEach(e=>{const f=e.dataset.f;
+    out[`agents.${e.dataset.k}.${KNOW_KEY[f]}`]=f==='traffic'?e.value:f==='share'?e.value==='true':f==='reasons'?e.checked:Math.max(0,+e.value||0)});
+  return {...out,...extra};
+}
+async function llmSpec(){                   // the chosen language model; in the online demo the visitor's key is handed over first (see agmsim/browser.py)
+  const b=$('backend').value, name=b.startsWith('preset:')?b.slice(7):null, preset=name?meta.llm_presets[name]:null; let keyed=false;
+  if(meta.online&&b!=='mock'){const key=$('apikey').value.trim(), env=preset?preset.key_env:(key?'AGMSIM_API_KEY':null);
+    if(preset&&preset.key_env&&!key)return {error:'Type your API key for this provider first.'};
+    if(env){await api('/api/key',{env,key}); keyed=!preset}}
+  return preset?{preset:name}:b==='mock'?{backend:'mock'}:{backend:b,base_url:$('base_url').value,model:$('model').value,...(keyed?{api_key_env:'AGMSIM_API_KEY'}:{})};
+}
+async function start(){
+  const settings=formSettings(), ov=Object.entries(settings).map(([k,v])=>`${k}=${JSON.stringify(v)}`);
+  if(Object.entries(settings).some(([k,v])=>k.endsWith('.use_llm')&&v)){const spec=await llmSpec();
+    if(spec.error){$('status').textContent=spec.error; $('status').className='err'; $('apikey').focus(); return}
+    for(const [k,v] of Object.entries(spec))ov.push(`llm.${k}=${v}`)}
+  const r=await api('/api/run',{scenario:$('scenario').value,overrides:ov});
+  run=r.id; header=null; frames=[]; decisions=[]; head=0; playing=true; model=null; selected=null; story=null; agentFilter=null; $('play').textContent='Pause';
+  $('log').textContent=''; $('metrics').textContent='Running…'; $('metrics').className='note'; $('status').className=''; $('story').textContent='Click a decision above.'; $('story').className='note';
+  $('agentchip').textContent=''; $('charts').classList.add('empty'); $('timehint').textContent='Charts appear once a run starts.'; hideTip();
+  clearInterval(timer); timer=setInterval(poll,400); poll();
+}
+async function poll(){
+  if(!run||polling)return; polling=true; let r;      // one request at a time: a slow answer must not be asked for twice
+  try{r=await api(`/api/run/${run}?frames=${frames.length}&decisions=${decisions.length}`)}finally{polling=false}
+  if(r.header&&!header){header=r.header; const sim=header.config.simulation; clock0=dayClock(sim.clock_start); dt=sim.time_step_seconds; horizon=sim.duration_seconds;
+    nodes={}; let xs=[],ys=[]; for(const [n,x,y] of header.network.nodes){nodes[n]=[x,y];xs.push(x);ys.push(y)}
+    box=[Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]}
+  const follow=head>=frames.length-2; frames.push(...r.frames); decisions.push(...r.decisions); if(follow&&!playing)head=frames.length-1;
+  $('scrub').max=Math.max(0,frames.length-1); addToLog(r.decisions);
+  if(r.frames.length||r.decisions.length)renderCharts();
+  $('status').textContent=r.status==='error'?r.error:`${r.status}: tick ${r.tick} / ${r.ticks}, ${decisions.length} decisions`;
+  if(r.status==='error')$('status').className='err';
+  if(r.metrics)renderMetrics(r.metrics);
+  if(['done','stopped','error'].includes(r.status)&&!r.frames.length&&!r.decisions.length){clearInterval(timer); if(selected!==null)select(selected)}
+}
+
+// ---------------------------------------------------------------- assistant
+function renderChat(waiting){const host=$('chat'); host.textContent='';
+  for(const m of chat)host.append(el('div','msg '+(m.role==='user'?'me':'it')+(m.err?' err':''),m.text));
+  if(waiting)host.append(el('div','msg it','…')); host.scrollTop=host.scrollHeight}
+function renderExtras(){const host=$('extras'); host.textContent=''; const keys=Object.keys(extra);
+  for(const [k,a] of Object.entries(meta.scenarios[$('scenario').value].agents)){if(!a.knows.drives)continue;      // distances the assistant changed show in the choices
+    const see=knowControl(k,'traffic'), tell=knowControl(k,'share'), r=extra[`agents.${k}.observation.radius_m`]??a.knows.radius_m, t=extra[`agents.${k}.interaction.range_m`]??a.knows.range_m;
+    if(see)see.querySelector('option[value=local]').textContent=`${r} m around`; if(tell)tell.querySelector('option[value=true]').textContent=`within ${t} m`}
+  if(!keys.length)return;
+  const wrap=el('div','chips'); host.append(el('div','note','Also set, from the assistant (click to remove):'),wrap);
+  for(const k of keys){const v=extra[k], b=el('button','chip',(Array.isArray(v)?`${k}: ${v.length} ${v.length===1?'entry':'entries'}`:`${k} = ${typeof v==='object'?JSON.stringify(v):v}`)+' ×');
+    b.title=JSON.stringify(v); b.onclick=()=>{delete extra[k]; renderExtras()}; wrap.append(b)}}
+function applySettings(scenario,set){        // a proposal goes into the form where the form has a control, and is listed below it where it has none
+  if(scenario&&scenario!==$('scenario').value&&meta.scenarios[scenario]){$('scenario').value=scenario; extra={}; agentRows()}
+  for(const [k,v] of Object.entries(set||{}).sort()){const m=k.match(/^agents\.(\w+)\.(agency|non_llm_policy|use_llm)$/); let km;
+    if(k==='simulation.seed')$('seed').value=v; else if(k==='agents.traveler.count')$('count').value=v;
+    else if(m&&control(m[1],'model')){const md=control(m[1],'model'), fb=control(m[1],'fallback'), ag=control(m[1],'agency');
+      if(m[2]==='agency'){if(typeof v==='string'&&[...ag.options].some(o=>o.value===v)){ag.value=v; delete extra[k]} else extra[k]=v}
+      else if(m[2]==='non_llm_policy'){fb.value=v; if(md.value!=='llm')md.value=v}
+      else md.value=v?'llm':fb.value}
+    else if(km=k.match(/^agents\.(\w+)\.(memory\.decisions|memory\.reasons|observation\.traffic|memory\.traffic_seconds|interaction\.share_traffic)$/)){
+      const f=Object.keys(KNOW_KEY).find(x=>KNOW_KEY[x]===km[2]), c=knowControl(km[1],f);
+      if(!c){extra[k]=v; continue}
+      if(f==='reasons'){c.checked=!!v; delete extra[k]; continue}
+      if(f==='keep'&&![...c.options].some(o=>+o.value===+v))c.add(new Option(v%60?v+' s':v/60+' min',v));
+      c.value=String(v); delete extra[k]}
+    else extra[k]=v}
+  llmSection(); renderExtras();
+}
+async function sendChat(){
+  const text=$('ask').value.trim(); if(!text)return; $('ask').value=''; chat.push({role:'user',text}); chatUsed=true;
+  const ready=Object.entries(meta.llm_presets||{}).find(([,p])=>p.has_key);      // a hosted model whose key is on this machine
+  if($('backend').value==='mock'&&ready){$('backend').value='preset:'+ready[0]; chat.push({role:'assistant',text:`Using ${ready[0]} to read your request (change it under Language model).`})}
+  llmSection(); renderChat(true);
+  let out; const spec=await llmSpec();
+  if(spec.error)out={reply:spec.error,error:spec.error};
+  else try{out=await api('/api/chat',{messages:chat.map(m=>({role:m.role,text:m.text})),scenario:$('scenario').value,settings:formSettings(),llm:spec})}catch(e){out={reply:String(e),error:String(e)}}
+  chat.push({role:'assistant',text:out.reply||'No answer.',err:!!out.error}); renderChat();
+  if(!out.error){applySettings(out.scenario,out.set); if(out.run)start()}
+}
+
+// ---------------------------------------------------------------- decisions
+const shown=d=>(!$('filter').value||d.kind===$('filter').value)&&(!$('onlyused').checked||d.exercised)&&(!agentFilter||d.agent===agentFilter);
+function logEntry(d){
+  const e=el('div','dec'+(d.i===selected?' on':'')), args=Object.keys(d.decision.args||{}).length?' '+JSON.stringify(d.decision.args):'';
+  e.dataset.i=d.i; e.append(el('span','t',clockText(d.tick*dt)));
+  const dot=el('span','dot'); dot.style.background=kindColor(d.kind); e.append(dot, el('span','who',d.agent));
+  const what=el('span','what'); what.append(d.trigger+' → ', el(d.exercised?'b':'span','',d.decision.action), args); what.title=d.trigger+' → '+d.decision.action+args; e.append(what);
+  e.append(el('span','src',(d.source==='forced'?'no authority':d.source)+(d.valid===false?' · invalid':'')+(d.info&&d.info.fallback?' · fell back':'')));
+  e.onclick=()=>select(d.i,true); return e;
+}
+function addToLog(items){const log=$('log'); if(items.length&&log.firstChild&&!log.firstChild.dataset.i)log.textContent='';
+  for(const d of items)if(shown(d))log.prepend(logEntry(d)); while(log.children.length>300)log.lastChild.remove()}
+function refillLog(){const log=$('log'); log.textContent=''; const keep=decisions.filter(shown).slice(-300); for(const d of keep)log.prepend(logEntry(d));
+  if(!keep.length)log.append(el('div','note',decisions.length?'No decision matches these filters.':'No decisions yet.'));
+  const chip=$('agentchip'); chip.textContent=''; if(agentFilter){const b=el('button','chip',`only ${agentFilter} ×`); b.onclick=()=>{agentFilter=null; refillLog(); renderStory()}; chip.append(b)}}
+async function select(i,reveal){
+  selected=i; document.querySelectorAll('#log .dec').forEach(e=>e.classList.toggle('on',+e.dataset.i===i));
+  const d=await api(`/api/run/${run}/decision/${i}`); if(!d||!d.agent)return;
+  story=await api(`/api/run/${run}/agent/${d.agent}`); story.decision=d; renderStory();
+  if(reveal)$('selected').scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function renderStory(){
+  const host=$('story'); if(!story||!story.decision)return; host.textContent=''; host.className='';
+  const d=story.decision, obs=d.obs||{}, top=el('div'); const dot=el('span','dot'); dot.style.background=kindColor(d.kind);
+  top.append(dot, el('b','',d.agent), ` · ${label(d.kind)} · ${story.level||''} · decided by ${story.policy||d.source}`); host.append(top);
+  const facts=el('dl','facts'), fact=(k,...v)=>{const dd=el('dd'); dd.append(...v); facts.append(el('dt','',k),dd)};
+  fact('When',clockText(d.tick*dt,true));
+  fact('Asked because',d.trigger+(obs.context&&obs.context.reason?`: ${obs.context.reason}`:''));
+  if(d.permitted)fact('Could choose',d.permitted.join(', '));
+  const args=Object.keys(d.decision.args||{}).length?' '+JSON.stringify(d.decision.args):'', chose=el('code','',d.decision.action+args);
+  fact('Chose',chose, d.source==='forced'?' (no authority here: the default applied)':d.exercised?` (the default was ${d.default?d.default.action:'different'})`:' (the same as the default)');
+  if(d.decision.rationale)fact('Its reason',d.decision.rationale);
+  if(d.result)fact('What happened',d.result);
+  if(d.info&&d.info.fallback)fact('Model reply','unusable ('+d.info.fallback+'): the built-in model decided instead');
+  host.append(facts);
+  if(story.timeline&&story.timeline.length){host.append(el('h3','',`${d.agent}'s ${story.timeline.some(x=>x.kind==='before')?'trip':'day'}`)); const holder=el('div'); host.append(holder); dayChart(holder)}
+  if(story.skipped&&story.skipped.length)host.append(el('div','note','Dropped from the plan: '+story.skipped.join(', ')));
+  if(story.summary)host.append(el('div','note',Object.entries(story.summary).map(([k,v])=>`${k.replace(/_/g,' ')}: ${v}`).join(' · ')));
+  const only=el('button','linkish',agentFilter===d.agent?`Show all agents' decisions`:`Show only ${d.agent}'s ${story.decisions.length} decisions`);
+  only.onclick=()=>{agentFilter=agentFilter===d.agent?null:d.agent; refillLog(); renderStory()}; host.append(only);
+  const raw=el('details'); raw.append(el('summary','','What the agent was shown (the raw record)'), el('pre','',JSON.stringify(d,null,1))); host.append(raw);
+}
+// One agent's day: activities as blocks, trips as a thin line, its decisions as dots below (filled where it used its authority).
+function dayChart(host){
+  const W=Math.max(260,host.clientWidth||340), H=74, L=6, R=6, y=24, X=t=>L+(W-L-R)*Math.min(1,Math.max(0,t)/story.horizon_s);
+  const svg=svgEl('svg',{class:'ts',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img','aria-label':'Timeline of this agent'}); host.append(svg);
+  svg.append(svgEl('line',{class:'axisl',x1:L,x2:W-R,y1:y+7,y2:y+7}));
+  for(const it of story.timeline){const x1=X(it.start), x2=Math.max(x1+1.5,X(it.end)-(it.kind==='activity'?2:0)); let mark;
+    if(it.kind==='activity'){mark=svgEl('rect',{x:x1,y:y,width:x2-x1,height:14,rx:Math.min(4,(x2-x1)/2),style:'fill:var(--p-move)'});
+      if(x2-x1>it.label.length*5.6+4)svg.append(svgEl('text',{class:'lab',x:x1+1,y:y-5},it.label));
+      if(it.must_start_by!==undefined)svg.append(svgEl('line',{x1:X(it.must_start_by),x2:X(it.must_start_by),y1:y-3,y2:y+17,style:'stroke:var(--ink);stroke-width:1.5'}))}
+    else mark=svgEl('line',{x1,x2,y1:y+7,y2:y+7,style:`stroke:var(--${it.kind!=='travel'?'grid':it.label==='car'?'k-vehicle':'k-bus'});stroke-width:4;stroke-linecap:round`});
+    const text=`${it.label}${it.kind==='travel'?' (travelling)':''}`, when=`${clockText(it.start)} – ${clockText(it.end)} · ${mins(it.end-it.start)}`+(it.must_start_by!==undefined?` · must start by ${clockText(it.must_start_by)}`:'')+(it.closes!==undefined?` · closes ${clockText(it.closes)}`:'');
+    const hit=svgEl('rect',{x:x1-1,y:y-4,width:Math.max(8,x2-x1+2),height:22,fill:'transparent'}); hit.onpointermove=e=>showTip(e.clientX,e.clientY,[['th',text],['tg',when]]); hit.onpointerleave=hideTip;
+    svg.append(mark,hit)}
+  for(const dec of story.decisions){const cx=X(dec.t), on=dec.i===selected;
+    const c=svgEl('circle',{cx,cy:y+26,r:on?5.5:4,style:`fill:${dec.exercised?'var(--accent)':'var(--surface)'};stroke:${on?'var(--ink)':dec.exercised?'var(--surface)':'var(--muted)'};stroke-width:${on?2:1.5};cursor:pointer`});
+    c.onpointermove=e=>showTip(e.clientX,e.clientY,[['th',clockText(dec.t,true)],['tr',dec.action+(Object.keys(dec.args).length?' '+JSON.stringify(dec.args):''),dec.trigger],['tg',dec.exercised?'used its authority':dec.source==='forced'?'no authority: default':'kept the default']]);
+    c.onpointerleave=hideTip; c.onclick=()=>select(dec.i); svg.append(c)}
+  for(const t of timeTicks())tickLabel(svg,X(t),H-4,t,L,W-R);
+  const lg=el('div','legend'); lg.innerHTML='<span><i class="sq" style="background:var(--p-move)"></i>activity</span><span><i class="ln" style="background:var(--k-vehicle)"></i>by car</span><span><i class="ln" style="background:var(--k-bus)"></i>bus or on foot</span><span><i style="background:var(--accent)"></i>decision that used authority</span><span><i class="ring" style="border-color:var(--muted);border-width:1.5px"></i>other decision</span>';
+  host.append(lg);
+}
+
+// ---------------------------------------------------------------- tooltip
+function showTip(x,y,rows){const tip=$('tip'); tip.textContent='';
+  for(const [cls,a,b,color] of rows){const r=el('div',cls); if(cls==='tr'){if(color){const k=el('i','key'); k.style.background=color; r.append(k)} r.append(el('b','',a),el('span','',b))} else r.textContent=a; tip.append(r)}
+  tip.hidden=false; const w=tip.offsetWidth, h=tip.offsetHeight; tip.style.left=Math.min(innerWidth-w-8,Math.max(8,x+14))+'px'; tip.style.top=Math.min(innerHeight-h-8,Math.max(8,y+14))+'px'}
+function hideTip(){$('tip').hidden=true}
+
+// ---------------------------------------------------------------- charts over the run (they share the time axis)
+const CH={L:36,R:92,T:6,H:64};
+const nice=v=>{const p=Math.pow(10,Math.floor(Math.log10(Math.max(1,v)))), m=v/p; return (m<=1?1:m<=2?2:m<=5?5:10)*p};
+function renderCharts(){
+  if(!header||!frames.length)return;
+  $('charts').classList.remove('empty'); $('timehint').textContent='Hover to read values · click to show that moment on the map';
+  const W=Math.max(300,$('charts').clientWidth), pw=W-CH.L-CH.R, X=t=>CH.L+pw*Math.min(1,t/horizon);
+  const n=frames.length, step=Math.max(1,Math.ceil(n/600)), pts=[]; for(let i=0;i<n;i+=step)pts.push(frames[i]); if(pts[pts.length-1]!==frames[n-1])pts.push(frames[n-1]);
+  const N=Object.values(frames[0].stats.people).reduce((a,b)=>a+b,0)||1, plans=frames.some(f=>f.stats.people.activity>0);
+  const stages=[{name:plans?'At an activity':'Not travelling yet',color:'var(--p-rest)',val:f=>f.stats.people.waiting+f.stats.people.activity},
+    {name:'Travelling',color:'var(--p-move)',val:f=>f.stats.people.moving},{name:'Finished',color:'var(--p-done)',val:f=>f.stats.people.done+f.stats.people.gave_up}];
+  const base=(id,withX)=>{const host=$(id); host.textContent=''; const H=CH.T+CH.H+(withX?18:5), svg=svgEl('svg',{class:'ts',width:W,height:H,viewBox:`0 0 ${W} ${H}`,role:'img'}); host.append(svg); return svg};
+  const yTick=(svg,frac,label)=>{const y=CH.T+CH.H*(1-frac); svg.append(svgEl('line',{class:frac?'gridl':'axisl',x1:CH.L,x2:CH.L+pw,y1:y,y2:y}), svgEl('text',{x:CH.L-6,y:y+3.5,'text-anchor':'end'},label))};
+  const cursors=svg=>{svg.append(svgEl('line',{class:'playhead',y1:CH.T-3,y2:CH.T+CH.H}), svgEl('line',{class:'cross',y1:CH.T-3,y2:CH.T+CH.H}))};
+  const Y=frac=>CH.T+CH.H*(1-frac);
+  // 0. external events as bars on the shared time axis, one row each
+  const events=(header.config.interventions||[]).filter(e=>e.at_seconds!==undefined), place=id=>((header.pois||[]).find(q=>q.id===id)||{name:id}).name;
+  $('evwrap').style.display=events.length?'block':'none'; $('ev').textContent='';
+  if(events.length){const host=$('ev'); host.textContent=''; const rows=events.length, esvg=svgEl('svg',{class:'ts',width:W,height:rows*15+2,viewBox:`0 0 ${W} ${rows*15+2}`,role:'img'}); host.append(esvg);
+    events.forEach((e,i)=>{const from=e.at_seconds, to=e.until_seconds===undefined||e.until_seconds===null?null:e.until_seconds, y=i*15+9;
+      const name=e.type==='weather'?(e.label||'bad weather'):e.type==='link_condition'?'road blocked or slowed':e.type==='demand_surge'?`${e.trips} extra trips ${e.direction==='to'?'to':'from'} ${e.poi?place(e.poi):'node '+e.node}`:e.type==='poi_closure'?`${place(e.poi)} closes early`:`${e.kind} becomes ${e.agency}`;
+      const x1=X(from), x2=to===null?x1:Math.max(x1+3,X(to)), incident=e.type==='link_condition';
+      esvg.append(to===null?svgEl('circle',{cx:x1,cy:y,r:4,style:'fill:var(--ink2)'}):svgEl('rect',{x:x1,y:y-2.5,width:x2-x1,height:5,rx:2.5,style:`fill:var(--${incident?'critical':'ink2'})`}));
+      const right=x2+6+name.length*5.6<W; esvg.append(svgEl('text',{class:'lab',x:right?x2+6:x1-6,y:y+3.5,'text-anchor':right?'start':'end'},name));
+      const hit=svgEl('rect',{x:x1-4,y:y-7,width:Math.max(12,x2-x1+8),height:14,fill:'transparent'}); hit.onpointermove=ev=>{ev.stopPropagation(); showTip(ev.clientX,ev.clientY,[['th',name],['tg',clockText(from)+(to===null?'':' – '+clockText(to))]])}; hit.onpointerleave=hideTip; esvg.append(hit)})}
+  // 1. travellers by stage: three steps of the travellers' hue, always with a legend; named at the line end when the ends are apart
+  let svg=base('c1'); yTick(svg,0,'0'); yTick(svg,.5,String(Math.round(N/2))); yTick(svg,1,String(N));
+  const ends=[];
+  for(const s of stages){svg.append(svgEl('path',{class:'ln',style:`stroke:${s.color}`,d:pts.map((f,i)=>`${i?'L':'M'}${X(f.t).toFixed(1)},${Y(s.val(f)/N).toFixed(1)}`).join('')})); ends.push([Y(s.val(frames[n-1])/N),s])}
+  const ys=ends.map(e=>e[0]).sort((a,b)=>a-b), apart=ys.every((v,i)=>!i||v-ys[i-1]>=12), xe=X(frames[n-1].t);
+  if(apart)for(const [y,s] of ends){svg.append(svgEl('circle',{cx:xe,cy:y,r:4,style:`fill:${s.color};stroke:var(--surface);stroke-width:2`}), svgEl('text',{class:'lab',x:xe+8,y:y+3.5},s.name))}
+  cursors(svg);
+  $('lg1').textContent=''; for(const s of stages){const sp=el('span'), k=el('i','ln'); k.style.background=s.color; sp.append(k,s.name); $('lg1').append(sp)}
+  // 2. traffic speed: one series (the cars' hue), a line over a light wash; no line where no car is on the road
+  svg=base('c2'); yTick(svg,0,'0'); yTick(svg,.5,'50%'); yTick(svg,1,'100%');
+  let line='', area='', open=false, x0=0;
+  for(const f of pts){const v=f.stats.speed, x=X(f.t).toFixed(1); if(v===null){if(open){area+=`L${x0},${Y(0)}Z`; open=false} continue}
+    const y=Y(Math.min(1,v)).toFixed(1); if(!open){line+=`M${x},${y}`; area+=`M${x},${Y(0)}L${x},${y}`; open=true} else {line+=`L${x},${y}`; area+=`L${x},${y}`} x0=x}
+  if(open)area+=`L${x0},${Y(0)}Z`;
+  svg.append(svgEl('path',{d:area,style:'fill:var(--k-vehicle);opacity:.1'}), svgEl('path',{class:'ln',d:line,style:'stroke:var(--k-vehicle)'})); cursors(svg);
+  // 3. decisions asked: columns per time slice, stacked by kind in the fixed kind order, 2px of surface between segments
+  const kinds=[...KINDS.filter(k=>header.kinds[k]),...Object.keys(header.kinds).filter(k=>!KINDS.includes(k))];
+  const nb=Math.max(12,Math.min(48,Math.floor(pw/13))), slice=horizon/nb, bins=Array.from({length:nb},()=>({})), used=Array.from({length:nb},()=>({}));
+  for(const d of decisions){const b=Math.min(nb-1,Math.floor(d.tick*dt/slice)); bins[b][d.kind]=(bins[b][d.kind]||0)+1; if(d.exercised)used[b][d.kind]=(used[b][d.kind]||0)+1}
+  const top=nice(Math.max(1,...bins.map(b=>Object.values(b).reduce((a,c)=>a+c,0))));
+  svg=base('c3',true); yTick(svg,0,'0'); yTick(svg,.5,String(top/2)); yTick(svg,1,String(top));
+  const bw=Math.min(24,pw/nb-2);
+  bins.forEach((b,i)=>{let y=CH.T+CH.H; const x=CH.L+pw*(i+.5)/nb-bw/2, present=kinds.filter(k=>b[k]);
+    present.forEach((k,j)=>{const h=b[k]/top*CH.H, hh=Math.max(1,h-(h>3?2:0)), r=j===present.length-1?Math.min(4,bw/2,hh):0, yt=y-hh;
+      svg.append(svgEl('path',{style:`fill:${kindColor(k)}`,d:`M${x},${y}V${yt+r}Q${x},${yt} ${x+r},${yt}H${x+bw-r}Q${x+bw},${yt} ${x+bw},${yt+r}V${y}Z`})); y-=h})});
+  for(const t of timeTicks()){svg.append(svgEl('line',{class:'axisl',x1:X(t),x2:X(t),y1:CH.T+CH.H,y2:CH.T+CH.H+3})); tickLabel(svg,X(t),CH.T+CH.H+14,t,CH.L,CH.L+pw)}
+  cursors(svg);
+  $('lg3').textContent=''; for(const k of kinds){const sp=el('span'), sw=el('i','sq'); sw.style.background=kindColor(k); sp.append(sw,label(k)); $('lg3').append(sp)}
+  model={W,pw,stages,N,kinds,bins,used,slice,nb}; placeCursors(); if($('tstable').open)renderTable();
+}
+function placeCursors(){
+  if(!model||!frames.length)return; const t=frames[Math.min(frames.length-1,Math.floor(head))].t, x=CH.L+model.pw*Math.min(1,t/horizon);
+  document.querySelectorAll('#charts .playhead').forEach(l=>{l.setAttribute('x1',x); l.setAttribute('x2',x)});
+  document.querySelectorAll('#charts .cross').forEach(l=>{if(hoverT===null){l.style.visibility='hidden'} else {const hx=CH.L+model.pw*hoverT/horizon; l.setAttribute('x1',hx); l.setAttribute('x2',hx); l.style.visibility='visible'}});
+}
+function readout(t){                       // every series at that moment, values first
+  const f=frames[frameAt(t)], b=Math.min(model.nb-1,Math.floor(t/model.slice)), rows=[['th',clockText(t,true)]];
+  for(const s of model.stages)rows.push(['tr',String(s.val(f)),s.name.toLowerCase(),s.color]);
+  rows.push(['tg','Traffic']); rows.push(['tr',f.stats.speed===null?'–':Math.round(f.stats.speed*100)+'%','of free-flow speed','var(--k-vehicle)'],['tr',String(f.stats.on_road),'cars on the road','var(--k-vehicle)']);
+  rows.push(['tg',`Decisions, ${clockText(b*model.slice)} – ${clockText((b+1)*model.slice)}`]); let any=false;
+  for(const k of model.kinds)if(model.bins[b][k]){any=true; rows.push(['tr',String(model.bins[b][k]),`${label(k)}${model.used[b][k]?`, ${model.used[b][k]} used authority`:''}`,kindColor(k)])}
+  if(!any)rows.push(['tr','0','decisions']); return rows;
+}
+function hoverAt(t,x,y){hoverT=Math.max(0,Math.min(frames[frames.length-1].t,t)); placeCursors(); showTip(x,y,readout(hoverT))}
+function seek(t){head=frameAt(t); playing=false; $('play').textContent='Play'; $('scrub').value=Math.floor(head)}
+function renderTable(){
+  const host=$('tstable').lastElementChild; host.textContent=''; if(!model)return; const tb=el('table'), hr=tb.insertRow();
+  for(const h of ['Time',...model.stages.map(s=>s.name),'Traffic speed','Cars on the road','Decisions so far']){const th=el('th','',h); hr.append(th)}
+  const last=frames[frames.length-1].t; for(let k=0;k<=12;k++){const t=last*k/12, f=frames[frameAt(t)], r=tb.insertRow();
+    for(const v of [clockText(t),...model.stages.map(s=>s.val(f)),f.stats.speed===null?'–':Math.round(f.stats.speed*100)+'%',f.stats.on_road,decisions.filter(d=>d.tick*dt<=t).length]){const td=r.insertCell(); td.textContent=v; td.className='num'}}
+  host.append(tb);
+}
+
+// ---------------------------------------------------------------- results
+function renderMetrics(m){
+  const host=$('metrics'); host.textContent=''; host.className=''; const T=m.travelers||{}, P=m.plans, V=m.vehicles, L=m.llm, tiles=[];
+  const O=m.outcomes; if(O){const n=v=>v>=100?Math.round(v).toLocaleString():v.toFixed(1);
+    tiles.push(['Average waiting time',mins(O.wait_time_s_mean),'for transport, per completed trip']);
+    tiles.push(['Vehicle miles travelled',n(O.vmt_miles)+' mi',`VMT · ${n(O.vkt_km)} km, cars and buses`]);
+    tiles.push(['Vehicle hours travelled',n(O.vht_hours)+' h','VHT · time vehicles were on the road']);
+    tiles.push(['Average traffic speed',O.traffic_speed_mph===null?'–':O.traffic_speed_mph.toFixed(1)+' mph',O.traffic_speed_kmh===null?'no vehicle moved':`${O.traffic_speed_kmh.toFixed(1)} km/h · VMT ÷ VHT`])}
+  if(m.ondemand)tiles.push(['On-demand rides',String(m.ondemand.rides),`${m.ondemand.cancelled} gave up waiting · ${Math.round(m.ondemand.empty_km_share*100)}% of the cars' km empty`]);
+  if(m.signals)tiles.push(['Wait at traffic lights',m.signals.wait_s_mean.toFixed(1)+' s',`per vehicle passing a light · ${Math.round(m.signals.stopped_share*100)}% had to stop`]);
+  if(m.travelers){tiles.push(['Trips completed',String(T.completed),`of ${T.trips} (${Math.round(T.completion_rate*100)}%)`]);
+    tiles.push(['Mean trip time',mins(T.trip_time_s_mean),`9 in 10 under ${mins(T.trip_time_s_p90)}`])}
+  if(P){tiles.push(['Mean day-plan score','$'+P.score_usd_mean.toFixed(2),'what the day was worth to the person']);
+    tiles.push(['People late',String(P.people_late),`of ${P.people} · ${P.late_min_mean.toFixed(2)} min each on average`]);
+    tiles.push(['Plans changed',String(P.edits),`in ${P.reviews} reviews of the day`])}
+  if(V&&V.trips)tiles.push(['Car time ÷ free-flow time','×'+V.travel_time_ratio.toFixed(2),`${V.reroutes} re-routes`+(V.vehicles_with_3plus_reroutes?` · ${V.vehicles_with_3plus_reroutes} cars changed route 3 times or more`:'')]);
+  if(m.knowledge)tiles.push(['Road reports passed on',m.knowledge.reports_heard.toLocaleString(),`${Math.round(m.knowledge.share_of_agents_that_heard*100)}% of the cars heard of a slow road from another car`]);
+  const asked=Object.values(m.decisions).reduce((a,d)=>a+d.decided,0), usedAll=Object.values(m.decisions).reduce((a,d)=>a+d.exercised,0);
+  if(L.calls||L.replayed)tiles.push(['Model calls',String(L.calls),`${L.fallbacks} fell back to a built-in model`]);
+  else tiles.push(['Decisions asked',String(asked),`${usedAll} used their authority`]);
+  const grid=el('div'); grid.id='tiles'; for(const [l,v,s] of tiles.slice(0,12)){const t=el('div','tile'); t.append(el('div','tl',l),el('div','tv',v),el('div','ts',s)); grid.append(t)} host.append(grid);
+  const modes=Object.entries(T.mode_share||{}).filter(([,v])=>v>0);
+  if(modes.length>1){host.append(el('h2','','How trips were made')); const seg=el('div','seg'), lg=el('div','legend');
+    for(const [name,share] of modes){const b=el('div'); b.style.flex=share; b.style.background=MODE_COLOR[name]||'var(--k-other)'; if(name==='car+bus')b.style.color='#0b0b0b';
+      const label=Math.round(share*100)+'%'; b.onpointermove=e=>showTip(e.clientX,e.clientY,[['tr',label,name,b.style.background]]); b.onpointerleave=hideTip; b.dataset.label=label; seg.append(b);
+      const sp=el('span'), sw=el('i','sq'); sw.style.background=b.style.background; sp.append(sw,name); lg.append(sp)}
+    host.append(seg,lg); requestAnimationFrame(()=>seg.childNodes.forEach(b=>{if(b.clientWidth>38)b.textContent=b.dataset.label}))}
+  host.append(el('h2','','How often each kind used its authority')); const mt=el('div','meters');
+  for(const [k,d] of Object.entries(m.decisions)){const name=el('div','mk'), dot=el('span','dot'); dot.style.background=kindColor(k); name.append(dot,label(k)+' ',el('small','',`${d.agency_level} · ${d.policy}`));
+    const bar=el('div','meter'), fill=el('div'); fill.style.width=(d.decided?100*d.exercised/d.decided:0)+'%'; bar.append(fill);
+    mt.append(name,bar,el('div','mv',d.decided?`${d.exercised} of ${d.decided}`:d.forced?`no authority (${d.forced} defaults)`:'not asked'))}
+  host.append(mt, el('div','note muted','Share of the decisions an agent was asked for in which it chose something other than the default.'));
+  const all=el('details'), rows=[], add=(g,k,label)=>{if(m[g]&&m[g][k]!==undefined&&m[g][k]!==null)rows.push([label,typeof m[g][k]==='object'?Object.entries(m[g][k]).map(([a,b])=>`${a} ${(b*100).toFixed(0)}%`).join(', '):m[g][k]])};
+  add('outcomes','wait_time_s_mean','Average waiting time (s)'); add('outcomes','vmt_miles','Vehicle miles travelled (VMT)'); add('outcomes','vkt_km','Vehicle kilometres travelled');
+  add('outcomes','vht_hours','Vehicle hours travelled (VHT)'); add('outcomes','traffic_speed_mph','Average traffic speed (mph)'); add('outcomes','traffic_speed_kmh','Average traffic speed (km/h)');
+  add('travelers','completion_rate','Trips completed (share)'); add('travelers','mode_share','Mode share'); add('travelers','trip_time_s_mean','Mean trip time (s)'); add('travelers','trip_time_s_p90','Trip time, 90th percentile (s)');
+  add('travelers','generalised_cost_usd_mean','Mean generalised cost (USD)'); add('travelers','gave_up_waiting','Gave up waiting for a bus');
+  add('plans','score_usd_mean','Day plans: mean score (USD)'); add('plans','activities_usd_mean','… of which activities'); add('plans','travel_usd_mean','… travel time'); add('plans','late_usd_mean','… lateness'); add('plans','money_usd_mean','… money paid');
+  add('plans','people_late','People late for an activity'); add('plans','late_min_mean','Mean lateness (min)'); add('plans','reviews','Plan reviews'); add('plans','edits','… of which the plan was changed');
+  add('plans','activities_skipped','Optional activities dropped'); add('plans','review_sensitivity','Changed when worth it minus when not');
+  add('vehicles','travel_time_ratio','Car time / free-flow time'); add('vehicles','reroutes','Re-routes by AgVs'); add('vehicles','suggestions','Transfers suggested by AgVs'); add('vehicles','suggestions_accepted','… accepted by owners');
+  add('vehicles','charge_stops','Charging trips'); add('vehicles','tolls_usd','Tolls paid (USD)'); add('bus','boardings','Bus boardings'); add('bus','holds','Bus holds'); add('evcs','revenue_usd','Station revenue (USD)');
+  add('pois','places','Places (points of interest)'); add('pois','visits','… visits'); add('pois','found_closed','… visitors who found the place closed');
+  add('ondemand','requests','On-demand cars: requests'); add('ondemand','rides','… rides made'); add('ondemand','cancelled','… travellers who gave up waiting'); add('ondemand','pickup_wait_s_mean','… wait from call to pick-up (s)');
+  add('ondemand','declined','… requests turned down by a car'); add('ondemand','repositions','… moves while free'); add('ondemand','empty_km_share','… share of km driven empty'); add('ondemand','profit_usd','… fares minus driving cost (USD)');
+  add('signals','junctions','Junctions with traffic lights'); add('signals','wait_s_mean','Wait at traffic lights, per vehicle passing (s)'); add('signals','stopped_share','… share that had to stop');
+  add('signals','switches','Changes of green'); add('signals','requests_followed','Requests of the orchestrator followed'); add('operator','signal_requests','Orchestrator: instructions to traffic lights');
+  add('operator','advisories_published','Advisories published'); add('operator','toll_usd_final','Final cordon toll (USD)');
+  const tb=el('table'); for(const [a,b] of rows){const r=tb.insertRow(); r.insertCell().textContent=a; const c=r.insertCell(); c.textContent=b; c.className='num'}
+  all.append(el('summary','','All results as a table'),tb);
+  if(L.calls||L.replayed)all.append(el('div','note',`Language model: ${L.calls} calls, ${L.input_tokens} tokens in, ${L.output_tokens} out, ${L.fallbacks} fell back. ${L.backends.map(b=>b.backend+' '+b.model+' ('+b.latency_ms_mean+' ms per call)').join(', ')}.`+(L.backends.some(b=>b.backend==='mock')?' The offline stand-in is not a language model.':'')));
+  host.append(all);
+}
+
+// ---------------------------------------------------------------- map
+function draw(){
+  const cv=$('cv'), dpr=window.devicePixelRatio||1, w=cv.clientWidth, h=cv.clientHeight;
+  if(cv.width!==Math.round(w*dpr)||cv.height!==Math.round(h*dpr)){cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr)}
+  const g=cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h); g.font='10.5px system-ui'; g.textAlign='center';
+  if(!header||!frames.length){g.fillStyle=theme.muted; g.font='13px system-ui'; g.fillText(run?'Starting…':'Choose a scenario and press Run',w/2,h/2); requestAnimationFrame(draw); return}
+  const pad=30, sx=(w-2*pad)/Math.max(1,box[2]-box[0]), sy=(h-2*pad)/Math.max(1,box[3]-box[1]), s=Math.min(sx,sy);
+  const ox=(w-s*(box[2]-box[0]))/2, oy=(h-s*(box[3]-box[1]))/2, P=(x,y)=>[ox+(x-box[0])*s, h-oy-(y-box[1])*s];
+  const fr=frames[Math.min(frames.length-1,Math.floor(head))], slow=fr.slow_links||{}, busy=fr.busy_links||{};
+  g.lineCap='round';
+  for(const [id,u,v] of header.network.links){const a=P(...nodes[u]), b=P(...nodes[v]), len=Math.hypot(b[0]-a[0],b[1]-a[1])||1, nx=(b[1]-a[1])/len*1.5, ny=-(b[0]-a[0])/len*1.5;
+    const jam=slow[id]!==undefined, share=busy[id]===undefined?1:busy[id], t=Math.min(1,(1-share)/.8);   // each direction on its own side of the road
+    g.beginPath(); g.moveTo(a[0]+nx,a[1]+ny); g.lineTo(b[0]+nx,b[1]+ny); g.strokeStyle=jam?theme.critical:mix(theme.road,theme.busy,t); g.lineWidth=jam?4:2.2+2.6*t; g.stroke();
+    if(jam&&u<v){g.fillStyle=theme.critical; g.font='bold 12px system-ui'; g.fillText('!',(a[0]+b[0])/2,(a[1]+b[1])/2-8); g.font='10.5px system-ui'}}
+  for(const sg of fr.signal||[]){const info=(header.signals||{})[sg[0]]; if(!info)continue; const c=P(...nodes[sg[1]]);   // a stub towards every approach that has green
+    if(sg[2]<0){g.beginPath(); g.arc(c[0],c[1],2.5,0,7); g.fillStyle=theme.muted; g.fill(); continue}
+    g.strokeStyle=theme.signal; g.lineWidth=3.5;
+    for(const u of info.from[sg[2]]){const a=P(...nodes[u]), len=Math.hypot(a[0]-c[0],a[1]-c[1])||1; g.beginPath(); g.moveTo(c[0],c[1]); g.lineTo(c[0]+(a[0]-c[0])/len*9,c[1]+(a[1]-c[1])/len*9); g.stroke()}}
+  g.font='10px system-ui';
+  const names=header.network.names;      // a network with named nodes (the Montreal testbed): the districts are labelled, places only marked
+  for(const poi of header.pois||[]){const c=P(...nodes[poi.node]); g.strokeStyle=theme.ink2; g.lineWidth=1.5; g.strokeRect(c[0]-5,c[1]-5,10,10); if(!names){g.fillStyle=theme.ink2; g.fillText(poi.name,c[0],c[1]+17)}}
+  if(names)for(const [n,x,y] of header.network.nodes){const c=P(x,y); g.fillStyle=theme.ink2; g.fillText(names[n],c[0],c[1]+17)}
+  g.font='10.5px system-ui';
+  for(const stops of Object.values(header.lines||{}))for(const n of stops){const p=P(...nodes[n]); g.beginPath(); g.arc(p[0],p[1],6,0,7); g.strokeStyle=theme.bus; g.lineWidth=1.5; g.stroke()}
+  for(const st of fr.evcs||[]){const p=P(...nodes[st[1]]); g.fillStyle=theme.evcs; g.beginPath(); g.roundRect(p[0]-7,p[1]-7,14,14,3); g.fill(); g.fillStyle=theme.ink2; g.fillText(`${st[0]} $${st[2]} ${st[3]}/${st[5]}+${st[4]}`,p[0],p[1]-11)}
+  const who=story&&story.decision?[story.id,story.car,story.owner]:[]; let mark=null, markKind=null;
+  for(const t of fr.traveler||[]){const p=P(t[1],t[2]), rest=t[3]==='at_activity';
+    if(rest){let k=7; for(const c of t[0])k=(k*31+c.charCodeAt(0))%997; p[0]+=(k%7-3)*3; p[1]+=(Math.floor(k/7)%7-3)*3}   // spread people who are at the same place
+    g.beginPath(); g.arc(p[0]+(rest?0:3),p[1]-(rest?0:3),rest?2.3:3,0,7); g.fillStyle=rest?theme.rest:theme.move; g.fill(); if(who[0]===t[0])mark=p}
+  for(const v of fr.vehicle||[]){const p=P(v[1],v[2]), state=v[3]; g.beginPath();
+    if(state==='parked'){g.arc(p[0],p[1],2.2,0,7); g.fillStyle=theme.parked; g.fill()}
+    else if(state==='driving'){g.arc(p[0],p[1],4,0,7); g.fillStyle=theme.vehicle; g.fill(); g.strokeStyle=theme.surface; g.lineWidth=1.5; g.stroke()}
+    else{g.arc(p[0],p[1],3.6,0,7); g.strokeStyle=theme.vehicle; g.lineWidth=2; g.stroke()}
+    if(who.includes(v[0])){mark=p; markKind='vehicle'}}
+  for(const c of fr.ondemand||[]){const p=P(c[1],c[2]); g.beginPath();        // filled while it carries someone, a ring otherwise
+    if(c[3]==='occupied'){g.arc(p[0],p[1],4,0,7); g.fillStyle=theme.ondemand; g.fill(); g.strokeStyle=theme.surface; g.lineWidth=1.5; g.stroke()}
+    else{g.arc(p[0],p[1],3.4,0,7); g.strokeStyle=theme.ondemand; g.lineWidth=c[3]==='to_pickup'?2.4:1.5; g.stroke()}
+    if(who.includes(c[0])){mark=p; markKind='ondemand'}}
+  for(const b of fr.bus||[]){const p=P(b[1],b[2]); g.fillStyle=theme.bus; g.beginPath(); g.roundRect(p[0]-9,p[1]-6,18,12,3); g.fill(); g.fillStyle='#fff'; g.fillText(b[4],p[0],p[1]+3.5)}
+  if(mark){g.beginPath(); g.arc(mark[0],mark[1],10,0,7); g.strokeStyle=theme.ink; g.lineWidth=1.5; g.stroke(); g.fillStyle=theme.ink; g.fillText(story.decision.agent,mark[0],mark[1]-14);
+    const km=markKind&&((header.kinds[markKind]||{}).mechanisms||{}), see=km&&km.observation&&km.observation.radius_m, tell=km&&km.interaction&&km.interaction.range_m;
+    g.lineWidth=1; g.strokeStyle=theme.ink2; g.fillStyle=theme.ink2; g.font='10px system-ui';      // how far this car sees (dashed) and how far it is heard (dotted)
+    if(see){g.setLineDash([6,4]); g.beginPath(); g.arc(mark[0],mark[1],see*s,0,7); g.stroke(); g.fillText('sees',mark[0],mark[1]-see*s-4)}
+    if(tell){g.setLineDash([2,4]); g.beginPath(); g.arc(mark[0],mark[1],tell*s,0,7); g.stroke(); g.fillText('tells',mark[0],mark[1]+tell*s+12)}
+    g.setLineDash([]); g.font='10.5px system-ui'}
+  const op=(fr.operator||[])[0]; $('clock').textContent=clockText(fr.t,true)+(fr.environment?' · '+fr.environment.weather:'')+(op?`  ${op[1]?'advisory ':''}${op[2]?'bus priority ':''}${op[3]?'toll $'+op[3]:''}`:'');
+  if(playing&&head<frames.length-1){head=Math.min(frames.length-1,head+ +$('speed').value*0.25); $('scrub').value=Math.floor(head)}
+  placeCursors(); requestAnimationFrame(draw);
+}
+
+// ---------------------------------------------------------------- start-up
+(async()=>{readTheme(); matchMedia('(prefers-color-scheme: dark)').addEventListener('change',readTheme); requestAnimationFrame(draw);
+  meta=await api('/api/meta'); $('scenario').innerHTML=Object.keys(meta.scenarios).map(s=>`<option>${s}</option>`).join('');
+  $('backend').innerHTML=Object.entries(meta.llm_presets||{}).map(([n,p])=>`<option value="preset:${n}">${n} — ${p.model}</option>`).join('')
+    +meta.llm_backends.filter(b=>b!=='mock').map(b=>`<option value="${b}">${b==='openai_compatible'?'another OpenAI-compatible server':b}</option>`).join('')
+    +'<option value="mock">offline stand-in (not a language model)</option>';
+  $('backend').value='mock'; $('backend').onchange=backendFields;
+  $('scenario').onchange=()=>{extra={}; agentRows(); renderExtras()}; agentRows(); $('run').onclick=start;
+  $('send').onclick=sendChat; $('ask').onkeydown=e=>{if(e.key==='Enter')sendChat()}; $('stop').onclick=()=>run&&api(`/api/run/${run}/stop`,{});
+  $('play').onclick=()=>{playing=!playing; $('play').textContent=playing?'Pause':'Play'}; $('scrub').oninput=e=>{head=+e.target.value; playing=false; $('play').textContent='Play'};
+  $('filter').onchange=refillLog; $('onlyused').onchange=refillLog; $('tstable').ontoggle=()=>$('tstable').open&&renderTable();
+  const charts=$('charts'), timeOf=e=>{const svg=e.target.closest('svg.ts'); if(!svg||!model)return null; const r=svg.getBoundingClientRect(); return Math.max(0,Math.min(1,(e.clientX-r.left-CH.L)/model.pw))*horizon};
+  charts.onpointermove=e=>{const t=timeOf(e); if(t===null)return; hoverAt(t,e.clientX,e.clientY)};
+  charts.onpointerleave=()=>{hoverT=null; placeCursors(); hideTip()};
+  charts.onclick=e=>{const t=timeOf(e); if(t!==null)seek(Math.min(t,frames[frames.length-1].t))};
+  charts.onkeydown=e=>{if(!model||!frames.length)return; const stepT=horizon/120, r=charts.getBoundingClientRect();
+    if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault(); const t=(hoverT===null?frames[Math.floor(head)].t:hoverT)+(e.key==='ArrowRight'?stepT:-stepT); hoverAt(t,r.left+CH.L+model.pw*Math.max(0,Math.min(horizon,t))/horizon,r.top+20)}
+    else if(e.key==='Enter'&&hoverT!==null)seek(hoverT); else if(e.key==='Escape'){hoverT=null; placeCursors(); hideTip()}};
+  charts.onblur=()=>{hoverT=null; placeCursors(); hideTip()};
+  let resizing=null; addEventListener('resize',()=>{clearTimeout(resizing); resizing=setTimeout(()=>{renderCharts(); renderStory()},120)})})();
+</script>
+</body>
+</html>

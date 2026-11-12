@@ -1,0 +1,16 @@
+/* the simulator on the start page: wider than the text column, in a frame */
+.content:has(.sim-embed) { width: min(76em, 100%); }
+.sim-embed { margin: 1.2rem 0 0.4rem; }
+.sim-embed iframe { display: block; width: 100%; height: 860px; border: 1px solid var(--color-background-border);
+                    border-radius: 8px; background: var(--color-background-primary); }
+.sim-open { margin: 0.5rem 0 2rem; font-size: 0.92em; }
+.start-button { display: inline-block; margin: 0.4rem 0.6rem 0.4rem 0; padding: 0.55rem 1.1rem; border-radius: 6px;
+                background: var(--color-brand-primary); color: var(--color-background-primary) !important;
+                font-weight: 600; text-decoration: none !important; }
+.start-button.quiet { background: transparent; color: var(--color-brand-primary) !important;
+                      border: 1px solid var(--color-brand-primary); }
+.tagline { font-size: 1.15em; color: var(--color-foreground-secondary); max-width: 46em; }
+/* the network drawing */
+.testbed-figure svg { width: 100%; height: auto; max-width: 46em; }
+.testbed-figure text { fill: currentColor; opacity: 0.8; font-family: inherit; }
+.testbed-figure circle { fill: var(--color-background-primary); stroke: currentColor; }
