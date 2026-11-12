@@ -39,8 +39,8 @@ Positions, lengths, speeds and lanes are approximate values by class of road. It
 experiment on, not a calibrated model of the city. It is the one scenario of the package: an experiment
 changes settings of the testbed, it does not bring a network of its own.
 
-**Project site, with the simulator in the page:** <https://nicholas0027.github.io/AgMSim/> (source in
-`website/`, published with `sh website/publish.sh`). The simulator runs inside your browser. It opens on the testbed (`montreal`); set the decision
+**Project site, with the simulator in the page:** <https://nicholas0027.github.io/agenticmobility/> (source in
+`website/`, published with `sh website/publish.sh` to the repository `agenticmobility`). The simulator runs inside your browser. It opens on the testbed (`montreal`); set the decision
 model and agency level of each kind of agent, press Run, and click any decision to see what the agent saw.
 To let a language model decide, choose `LLM` for a kind of agent and type your own API key (for example a
 DeepSeek key): the key stays in your browser tab and the calls go straight from your browser to the provider.
@@ -99,7 +99,7 @@ The online demo is that same page as a static site: `.venv/bin/python online/bui
 LLM types their own key into the page; it is kept in that tab's memory only, never becomes part of a
 configuration or trace, and the browser itself calls the provider (which must accept requests from web
 pages; DeepSeek's API does). `sh website/publish.sh` rebuilds the project site with the simulator in it and
-pushes it to the `gh-pages` branch, which GitHub Pages serves.
+pushes it to the `gh-pages` branch of the repository `agenticmobility`, which GitHub Pages serves.
 
 ## Outcome variables
 

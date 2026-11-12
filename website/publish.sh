@@ -1,13 +1,13 @@
 #!/bin/sh
 # Build the project site and publish it to the repository that serves it (GitHub Pages, branch gh-pages).
-#     sh website/publish.sh                                                    # to this repository's pages
-#     SITE_REPO=https://github.com/<user>/agenticmobility.git sh website/publish.sh   # to another repository
+#     sh website/publish.sh                                    # to https://github.com/Nicholas0027/agenticmobility
+#     SITE_REPO=https://github.com/<user>/<repo>.git sh website/publish.sh           # to another repository
 # The site is the pages in website/ (Sphinx, Furo theme) plus the simulator that runs in the browser
 # (online/build.py), put at simulator/. Its links are relative, so it can be served from any address.
 set -e
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
-SITE_REPO=${SITE_REPO:-$(git remote get-url origin)}
+SITE_REPO=${SITE_REPO:-https://github.com/Nicholas0027/agenticmobility.git}
 NAME=$(git config user.name)
 EMAIL=$(git config user.email)
 HELPER=$(git config --get-all credential.https://github.com.helper | tail -1)
