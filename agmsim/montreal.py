@@ -62,7 +62,7 @@ NODES = [
     ("kahnawake", "Kahnawake", 45.4050, -73.6650),
     ("laval_w", "Laval (Chomedey)", 45.5600, -73.7450),
     ("laval_c", "Laval (Pont-Viau)", 45.5750, -73.6900),
-    ("laval_e", "Laval (Duvernay)", 45.6050, -73.6650),
+    ("laval_e", "Laval (Duvernay)", 45.6300, -73.6300),
 ]
 NODE = {short: i for i, (short, *_rest) in enumerate(NODES)}
 
