@@ -42,11 +42,11 @@ calibrated model of the city.**
 
 ## The morning
 
-`agmsim run montreal` simulates a weekday from 07:00 to 09:00 with everything the simulator has:
+`agmsim run montreal` simulates a weekday from 06:00 to 12:00 with everything the simulator has:
 
 | Part | In the testbed |
 | - | - |
-| Travellers | 600, living where people live (weights by district), 65% with a car |
+| Travellers | 900, living where people live (weights by district), 65% with a car; most set out around 08:00 |
 | Places | 21 named destinations: downtown offices, the Technoparc, YUL airport, McGill, UdeM, UQAM, three hospitals, markets and malls, the Bell Centre, the Olympic Park |
 | Private cars | one per car-owning traveller, electric, level L1 (re-route on traffic) |
 | On-demand cars | a fleet of 40, level L1 |
@@ -56,8 +56,8 @@ calibrated model of the city.**
 | Orchestrator | publishes advisories (L1); a cordon around Downtown that can carry a charge |
 | Event | a crash on the Decarie expressway, 07:30 to 08:10, traffic at 30% of its speed |
 
-With these settings and seed 1 every trip is completed, the mean trip takes 16 minutes, 61% of trips are made
-by car, 22% by transit and 17% by on-demand car; a run takes about three seconds.
+With these settings and seed 1 every trip is completed, the mean trip takes 15 minutes, 63% of trips are made
+by car, 19% by transit and 18% by on-demand car; a run with the built-in decision models takes about 15 seconds.
 
 ## Changing a condition
 
@@ -67,7 +67,7 @@ An experiment changes settings of the testbed and leaves everything else as it i
 agmsim run montreal --set agents.vehicle.agency=L0          # cars that follow their first route
 agmsim run montreal --set agents.operator.initial_toll=2    # a charge of 2 USD to enter the centre
 agmsim run montreal --set events=[]                         # the same morning without the crash
-agmsim run montreal --set agents.traveler.count=900         # more people
+agmsim run montreal --set agents.traveler.count=1500        # more people
 ```
 
 Every setting is described in [](configuration.md).

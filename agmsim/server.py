@@ -28,7 +28,7 @@ from .network import build_network
 from .engine import Simulation
 from .kinds.base import KINDS
 from .llm import LLM_BACKENDS, load_env_file
-from .policies.base import available_policies
+from .policies.base import available_policies, explain_policy
 from .recorder import Recorder
 
 WEB = Path(__file__).parent / "web"
@@ -181,6 +181,8 @@ def meta(online: bool = False) -> dict:
         kinds[name] = {"title": kind.title, "side": kind.side, "policies": available_policies(name),
                        "levels": {lvl: list(perms) for lvl, perms in sorted(kind.agency.levels.items())},
                        "permissions": kind.agency.permissions,
+                       # what each built-in decision model of this kind does, in plain sentences
+                       "models": {p: explain_policy(name, p) for p in available_policies(name) if p not in ("llm", "remote")},
                        "triggers": dict(getattr(kind, "triggers", {})),      # why an agent of this kind is asked
                        "actions": dict(getattr(kind, "actions", {}))}        # what it can then choose
     scenarios = {}

@@ -132,6 +132,8 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
 .gkv{display:grid;grid-template-columns:minmax(150px,max-content) 1fr;gap:3px 16px;margin:0}.gkv dt{color:var(--muted)}.gkv dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}
 .glive{border:1px solid var(--ring);border-radius:10px;padding:12px 14px;background:var(--page)}.glive>h3{margin:0 0 6px;font-size:13px}.glive>h3+*{margin-top:0}
 .glive .gsub{margin:12px 0 4px;font-weight:600}
+.gmodel{margin:10px 0 0}.gmodel>b{margin-right:8px}.gmodel ul{margin:3px 0 0;padding-left:18px}.gmodel li{margin:2px 0;max-width:86ch}
+.sets{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:0 0 7px;font-size:12px;color:var(--ink2)}.sets button{padding:2px 10px;border-radius:999px;font-size:12px}.chk{display:flex;gap:6px;align-items:flex-start;margin:0 0 6px}.chk input{margin-top:2px;flex:none}
 /* a narrow window shows one column at a time, so the page stays short */
 @media (max-width:1180px){main{grid-template-columns:1fr;height:auto}main>*{overflow:visible}
   body:not([data-col=setup]) #setup,body:not([data-col=centre]) #centre,body[data-col=setup] #side,body[data-col=centre] #side,
@@ -157,12 +159,18 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--page);border:1px
   <div class="row"><div><label for="seed">Seed</label><input id="seed" type="number"></div>
     <div><label for="count">Travellers</label><input id="count" type="number" min="1"></div></div>
   <h2>Agents</h2>
+  <div class="sets" id="sets">Decided by <button data-set="mixed">language model, lights and transit built-in</button><button data-set="llm">language model for all</button><button data-set="builtin">built-in for all</button></div>
   <table id="agents"><thead><tr><th>Kind</th><th>Decided by</th><th>Agency</th></tr></thead><tbody></tbody></table>
-  <div class="note" style="margin-top:6px">Every kind of agent is decided by one model: a built-in one, or a language model (LLM). Agency sets what it is allowed to decide.</div>
+  <div class="note" style="margin-top:6px">Every kind of agent is decided by one model: a built-in one, or a language model (LLM). Agency sets what it is allowed to decide. What each built-in model does is in the Guide.</div>
+  <div class="note" style="margin-top:4px">A language model answers in about a second, and the run waits for it at every decision: as the page opens the testbed takes about half an hour (some 1,900 questions), with every kind on a language model several hours, with built-in models only a few seconds.</div>
   <div class="note muted" id="levelnote" style="margin-top:4px"></div>
   <h2>What they know <span class="plain">memory, observation, interaction</span></h2>
   <table id="know"><thead><tr><th>Kind</th><th title="How many of its own latest decisions and outcomes it is shown when it decides, and whether each comes with the reason given for it">Recalls its last</th></tr></thead><tbody></tbody></table>
   <div class="note" style="margin-top:6px">Agency says what a kind may decide; this says what it has to go on. Every decision model of a kind is handed the same. Kinds that find their own way through traffic also have a sight, a memory for slow roads, and other cars to hear from.</div>
+  <h2>Events <span class="plain">what happens to the city during the run</span></h2>
+  <label class="chk" id="owneventsbox"><input type="checkbox" id="ownevents" checked><span id="owneventsname"></span></label>
+  <label for="weather">Weather</label>
+  <select id="weather"><option value="">clear</option><option value="rain">rain: roads 15% slower, waiting and walking feel longer</option><option value="snow">snow: roads 30% slower, waiting and walking feel much longer</option></select>
   <div id="extras"></div>
   <div id="llmsec">
     <h2>Language model <span class="plain">for the assistant and the kinds decided by LLM</span></h2>
@@ -240,6 +248,10 @@ const KINDS=['traveler','vehicle','bus','evcs','operator','signal','ondemand']; 
 const KIND_LABEL={traveler:'traveller',vehicle:'private car',evcs:'charging station',operator:'orchestrator',signal:'traffic light',ondemand:'on-demand car'};
 const label=k=>KIND_LABEL[k]||k;            // what a kind is called on the page; settings keep the kind's own name
 const kindColor=k=>`var(--k-${KINDS.includes(k)?k:'other'})`;
+// What the page opens on: a language model decides for the kinds whose choices are the subject. Traffic lights and transit vehicles
+// decide every few seconds (four fifths of all decisions), so they start on their built-in models; one click changes that.
+const LLM_FIRST=k=>!['signal','bus'].includes(k);
+const WEATHER={rain:{speed_factor:.85,walk_factor:.9,discomfort:1.5},snow:{speed_factor:.7,walk_factor:.8,discomfort:2}};
 const MODEL_HINT={rule:'built-in: fixed behaviour',algorithm:'built-in: computes its best action',utility:'built-in: a choice model'};
 const MODE_COLOR={walk:'var(--k-traveler)',car:'var(--k-vehicle)',bus:'var(--k-bus)','car+bus':'var(--k-evcs)',ride:'var(--k-ondemand)'};
 let meta, run=null, header=null, frames=[], decisions=[], head=0, playing=true, timer=null, polling=false;
@@ -267,13 +279,15 @@ function agentRows(){
   $('desc').textContent=sc.description; $('seed').value=sc.seed; $('count').value=sc.travelers;
   $('filter').innerHTML='<option value="">all kinds</option>'+sc.kinds.map(k=>`<option value="${k}">${label(k)}</option>`).join('');
   for(const k of sc.kinds){const kd=meta.kinds[k], a=sc.agents[k], tr=tb.insertRow();
-    const lvl=typeof a.agency==='string'?a.agency:'L0', pol=kd.policies.filter(p=>p!=='llm'&&p!=='remote');
+    const lvl=typeof a.agency==='string'?a.agency:'L0', pol=kd.policies.filter(p=>p!=='llm'&&p!=='remote'), llm=a.use_llm||LLM_FIRST(k);
     tr.innerHTML=`<td title="${kd.title}"><span class="dot" style="background:${kindColor(k)}"></span><button class="kname" data-guide="${k}" title="What it is, what it may do and what it is doing: open the guide">${label(k)}</button></td>
-    <td><select data-k="${k}" data-f="model" aria-label="${k} decided by">${pol.map(p=>`<option value="${p}" title="${MODEL_HINT[p]||'built-in'}" ${!a.use_llm&&p===a.policy?'selected':''}>${p} (built-in)</option>`).join('')}<option value="llm" title="a language model, set below" ${a.use_llm?'selected':''}>LLM (language model)</option></select>
+    <td><select data-k="${k}" data-f="model" aria-label="${k} decided by">${pol.map(p=>`<option value="${p}" title="${MODEL_HINT[p]||'built-in'}" ${!llm&&p===a.policy?'selected':''}>${p} (built-in)</option>`).join('')}<option value="llm" title="a language model, set below" ${llm?'selected':''}>LLM (language model)</option></select>
       <div class="fb">if its reply is unusable: <select data-k="${k}" data-f="fallback" aria-label="${k} fallback">${pol.map(p=>`<option ${p===a.policy?'selected':''}>${p}</option>`).join('')}</select></div></td>
     <td><select data-k="${k}" data-f="agency" aria-label="${k} agency level">${Object.keys(kd.levels).map(l=>`<option ${l===lvl?'selected':''} title="${kd.levels[l].join(', ')||'no authority'}">${l}</option>`).join('')}</select></td>`}
   tb.querySelectorAll('select[data-f=model]').forEach(e=>e.onchange=llmSection); llmSection();
   tb.querySelectorAll('[data-guide]').forEach(b=>b.onclick=()=>openGuide(b.dataset.guide));
+  const own=sc.config.interventions||[]; $('owneventsbox').style.display=own.length?'flex':'none'; $('ownevents').checked=true; $('weather').value='';
+  $('owneventsname').textContent='the scenario\'s own: '+own.map(e=>e.label||e.type.replace(/_/g,' ')).join(', ');
   const kb=$('know').tBodies[0]; kb.textContent='';                 // what each kind has to go on
   for(const k of sc.kinds){const m=sc.agents[k].knows, tr=kb.insertRow(), opt=(v,t,cur)=>`<option value="${v}" ${String(v)===String(cur)?'selected':''}>${t}</option>`;
     tr.innerHTML=`<td><span class="dot" style="background:${kindColor(k)}"></span>${label(k)}</td>
@@ -290,6 +304,10 @@ function agentRows(){
   $('levelnote').textContent=Object.entries(meta.level_names).map(([k,v])=>`${k} ${v}`).join(' · ');
 }
 // Each kind has exactly one decision model. The language-model settings appear only when some kind uses one.
+function setModels(which){                 // one click for every kind: 'llm', 'builtin', or 'mixed' (what the page opens on)
+  const sc=meta.scenarios[$('scenario').value];
+  document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const k=e.dataset.k; e.value=which==='llm'||(which==='mixed'&&LLM_FIRST(k))?'llm':sc.agents[k].policy});
+  llmSection()}
 function llmSection(){
   let any=false;
   document.querySelectorAll('#agents select[data-f=model]').forEach(e=>{const on=e.value==='llm'; any=any||on; e.parentNode.querySelector('.fb').style.display=on?'block':'none'});
@@ -314,19 +332,23 @@ function formSettings(){                    // everything the form sets now, as 
     out[`agents.${k}.use_llm`]=on; out[`agents.${k}.non_llm_policy`]=on?control(k,'fallback').value:e.value; out[`agents.${k}.agency`]=control(k,'agency').value});
   document.querySelectorAll('#know [data-f]').forEach(e=>{const f=e.dataset.f;
     out[`agents.${e.dataset.k}.${KNOW_KEY[f]}`]=f==='traffic'?e.value:f==='share'?e.value==='true':f==='reasons'?e.checked:Math.max(0,+e.value||0)});
+  const sc=meta.scenarios[$('scenario').value].config, w=$('weather').value, own=$('ownevents').checked;      // the events of the run, if they differ from the scenario's
+  if(w||!own)out.events=[...(own?sc.interventions||[]:[]),...(w?[{type:'weather',label:w,at_seconds:0,until_seconds:sc.simulation.duration_seconds,...WEATHER[w]}]:[])];
   return {...out,...extra};
 }
 async function llmSpec(){                   // the chosen language model; in the online demo the visitor's key is handed over first (see agmsim/browser.py)
   const b=$('backend').value, name=b.startsWith('preset:')?b.slice(7):null, preset=name?meta.llm_presets[name]:null; let keyed=false;
   if(meta.online&&b!=='mock'){const key=$('apikey').value.trim(), env=preset?preset.key_env:(key?'AGMSIM_API_KEY':null);
-    if(preset&&preset.key_env&&!key)return {error:'Type your API key for this provider first.'};
+    if(preset&&preset.key_env&&!key)return {error:'A language model decides for some kinds of agent: type your API key for it below, or'};
     if(env){await api('/api/key',{env,key}); keyed=!preset}}
+  if(!meta.online&&preset&&preset.key_env&&!preset.has_key)return {error:`A language model decides for some kinds of agent, and there is no key for it on this machine (put ${preset.key_env}=… in the file .env of the project folder and start again), or`};
   return preset?{preset:name}:b==='mock'?{backend:'mock'}:{backend:b,base_url:$('base_url').value,model:$('model').value,...(keyed?{api_key_env:'AGMSIM_API_KEY'}:{})};
 }
 async function start(){
   const settings=formSettings(), ov=Object.entries(settings).map(([k,v])=>`${k}=${JSON.stringify(v)}`);
   if(Object.entries(settings).some(([k,v])=>k.endsWith('.use_llm')&&v)){const spec=await llmSpec();
-    if(spec.error){$('status').textContent=spec.error; $('status').className='err'; $('apikey').focus(); return}
+    if(spec.error){const st=$('status'), b=el('button','linkish','run with the built-in models instead'); st.textContent=spec.error+' '; st.className='err';
+      b.onclick=()=>{setModels('builtin'); start()}; st.append(b,'.'); if(meta.online)$('apikey').focus(); return}
     for(const [k,v] of Object.entries(spec))ov.push(`llm.${k}=${v}`)}
   const r=await api('/api/run',{scenario:$('scenario').value,overrides:ov});
   setCol('centre'); metricsNow=null;
@@ -678,7 +700,13 @@ const ABOUT={traveler:'A person with a trip to make. Chooses how to travel, answ
   lights:'The junctions that have traffic lights, and the green phases each can show.'};
 let view='sim', gsel='vehicle', metricsNow=null;
 const gicon=(name,color)=>{const e=el('span','gicon'); if(color)e.style.background=color; e.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[name]}</svg>`; return e};
-const curCfg=()=>header?header.config:meta.scenarios[$('scenario').value].config;
+function formCfg(){                        // the scenario with what the Simulate page is set to now
+  const c=JSON.parse(JSON.stringify(meta.scenarios[$('scenario').value].config));
+  for(const [k,v] of Object.entries(formSettings())){const parts=(k==='events'?'interventions':k).split('.'); let o=c;
+    for(const part of parts.slice(0,-1))o=o[part]=o[part]&&typeof o[part]==='object'?o[part]:{}; o[parts[parts.length-1]]=v}
+  return c}
+const curCfg=()=>header?header.config:formCfg();
+const llmName=()=>{const l=header&&header.config.llm; return l&&(l.preset||l.model)?l.preset||l.model:$('backend').selectedOptions[0]?$('backend').selectedOptions[0].textContent:'a language model'};
 const curNet=()=>header?header.network:meta.scenarios[$('scenario').value].network;
 const nodeName=n=>{const names=curNet().names; return names&&names[n]!==undefined?names[n]:'node '+n};
 const dayText=t=>{const c=dayClock(curCfg().simulation.clock_start)+t; return `${two(c/3600%24)}:${two(c%3600/60)}`};
@@ -711,7 +739,7 @@ function renderGuide(){
     b.onclick=()=>{gsel=it.id; renderGuide(); $('gdetail').scrollTop=0}; list.append(b)}
   const it=items.find(i=>i.id===gsel), host=$('gdetail'); host.textContent='';
   const head=el('div','ghead'), txt=el('div'); txt.append(el('h2','',it.title[0].toUpperCase()+it.title.slice(1)), el('p','',ABOUT[it.id])); head.append(gicon(it.ic,it.color),txt); host.append(head);
-  if(!header)host.append(el('div','note','Settings shown are those of the scenario as it comes. What you change on the Simulate page applies when you press Run; this page then shows the run.'));
+  if(!header)host.append(el('div','note','Settings shown are what the Simulate page is set to now. Once a run has started, this page shows that run.'));
   (KINDS.includes(it.id)?kindStatic:PART[it.id])(host,it.id);
   const live=el('div','gsec'); live.id='glive'; host.append(live); renderGuideLive();
   if(KINDS.includes(it.id))kindSettings(host,it.id);
@@ -728,10 +756,15 @@ function kindStatic(host,k){
   const mk=meta.kinds[k], cfg=curCfg().agents[k], hk=header&&header.kinds[k];
   const level=hk?hk.agency.level:typeof cfg.agency==='string'?cfg.agency:'custom', allowed=new Set(hk?hk.agency.permissions:mk.levels[level]||(Array.isArray(cfg.agency)?cfg.agency:[]));
   const s1=gsec(host,'Who decides, and how much');
-  gkv(s1,[['Decided by',cfg.use_llm?'a language model (set on the Simulate page)':`${cfg.non_llm_policy} — ${MODEL_HINT[cfg.non_llm_policy]||'built-in'}`],
+  gkv(s1,[['Decided by',cfg.use_llm?`a language model: ${llmName()}`:`the built-in model “${cfg.non_llm_policy}”`],
     ['Agency level',`${level}${meta.level_names&&meta.level_names[level]?' · '+meta.level_names[level]:''}`],
     ['How many',hk?`${hk.count} in this run`:'known once a run has started']]);
   if(cfg.mix&&cfg.mix.length)gkv(s1,[['Mixed population',JSON.stringify(cfg.mix)]]);
+  const s1b=gsec(host,'How it decides');
+  if(cfg.use_llm)s1b.append(el('div','','A language model is shown what the agent sees (why it is asked, its own state, what it can see, its memory, and the actions it is permitted) and answers with one of those actions and a reason. The answer is checked: an unusable one is asked for once more, and then the built-in model below decides in its place.'));
+  for(const [name,lines] of Object.entries(mk.models||{})){const m=el('div','gmodel'), ul=el('ul'); m.append(el('b','',`Built-in model “${name}”`));
+    if(name===cfg.non_llm_policy)m.append(pill(!cfg.use_llm,cfg.use_llm?'stands in when the language model fails':'in use'));
+    for(const line of lines)ul.append(el('li','',line)); m.append(ul); s1b.append(m)}
   const s2=gsec(host,'What it may do','its functions: green ones are switched on at its level'), from=p=>Object.keys(mk.levels).find(l=>mk.levels[l].includes(p))||'–';
   gtable(s2,['','Function','What it means','From level'],Object.keys(mk.permissions).map(p=>[pill(allowed.has(p),allowed.has(p)?'on':'off'),el('code','',p),mk.permissions[p],from(p)]));
   if(!allowed.size)s2.append(el('div','note','At this level it has no say: at every decision point the default applies and its decision model is not consulted.'));
@@ -827,7 +860,8 @@ function renderGuideLive(){
   $('backend').innerHTML=Object.entries(meta.llm_presets||{}).map(([n,p])=>`<option value="preset:${n}">${n} — ${p.model}</option>`).join('')
     +meta.llm_backends.filter(b=>b!=='mock').map(b=>`<option value="${b}">${b==='openai_compatible'?'another OpenAI-compatible server':b}</option>`).join('')
     +'<option value="mock">offline stand-in (not a language model)</option>';
-  $('backend').value='mock'; $('backend').onchange=backendFields;
+  $('backend').value=(meta.llm_presets||{}).deepseek?'preset:deepseek':'mock'; $('backend').onchange=backendFields;      // DeepSeek Flash, unless it is not offered
+  document.querySelectorAll('#sets button').forEach(b=>b.onclick=()=>setModels(b.dataset.set));
   $('scenario').onchange=()=>{extra={}; agentRows(); renderExtras()}; agentRows(); $('run').onclick=start;
   document.querySelectorAll('#views button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
   document.querySelectorAll('#cols button').forEach(b=>b.onclick=()=>setCol(b.dataset.c));

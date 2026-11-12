@@ -16,7 +16,8 @@ traffic lights and the orchestrator of the network.</p>
 
 The simulator runs in this page, in your browser: nothing to install, nothing sent to a server. It opens on
 the testbed, a simplified Montreal on a weekday morning. Set who decides for each kind of agent and how much
-it may decide, press **Run**, and click any decision to see what the agent saw.
+it may decide, press **Run**, and click any decision to see what the agent saw. The page opens with a language
+model deciding for most kinds, which needs your own API key; **built-in for all** runs at once without one.
 
 <div class="sim-embed">
 <iframe src="simulator/index.html" title="The AgMSim simulator" loading="lazy"></iframe>
@@ -65,8 +66,8 @@ a language model under identical authority.
 :file: _static/testbed.html
 ```
 
-A weekday morning from 07:00 to 09:00 on the island of Montreal, its crossings, the South Shore and Laval:
-600 travellers, their cars, 40 on-demand cars, four transit lines, traffic lights in the inner city, seven
+A weekday morning from 06:00 to 12:00 on the island of Montreal, its crossings, the South Shore and Laval:
+900 travellers, their cars, 40 on-demand cars, four transit lines, traffic lights in the inner city, seven
 charging stations, an orchestrator, and a crash on the Decarie expressway at 07:30. See [](testbed.md).
 
 ## Install

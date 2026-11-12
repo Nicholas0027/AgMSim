@@ -6,13 +6,13 @@ keys are errors.
 
 ```yaml
 name: montreal
-simulation: {time_step_seconds: 2, duration_seconds: 7200, seed: 1, clock_start: "07:00"}
-network: {type: montreal, capacity_scale: 0.02}
+simulation: {time_step_seconds: 2, duration_seconds: 21600, seed: 1, clock_start: "06:00"}
+network: {type: montreal, capacity_scale: 0.015}
 pois: [...]                              # named places, see "Places and events"
-demand: {pattern: hotspots, end_seconds: 4500, min_trip_m: 3000, to_pois: true, params: {...}}
+demand: {pattern: hotspots, end_seconds: 19800, min_trip_m: 3000, to_pois: true, params: {...}}
 events: [...]
 agents:
-  traveler: {count: 600, car_ownership: 0.65, non_llm_policy: utility, agency: L4}
+  traveler: {count: 900, car_ownership: 0.65, non_llm_policy: utility, agency: L4}
   vehicle:  {non_llm_policy: algorithm, agency: L1, battery: {...}}
   ondemand: {fleet: 40, non_llm_policy: algorithm, agency: L1}
   bus:      {agency: L1, lines: [{id: Orange, stops: [0, 3, 4, 12, 11, 24, 23, 8, 5], buses: 8, capacity: 120}]}

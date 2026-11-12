@@ -24,6 +24,13 @@ class RuleTraveler(Policy):
     bus stop once the wait exceeds the traveller's patience.
     """
 
+    explained = [
+        "When a trip comes up: travels the way it always does (its habitual mode).",
+        "When its car proposes something: accepts.",
+        "While waiting: gives up once it has waited longer than its patience and transport is not about to arrive.",
+        "When it has to plan again: takes whatever gets it there soonest.",
+    ]
+
     def decide(self, obs):
         if obs.trigger == "need":
             return Decision("choose_service", dict(obs.default.args), "rule: habitual mode")
@@ -54,6 +61,19 @@ class UtilityTraveler(Policy):
     The parameters are behavioural assumptions, not estimates from data;
     calibrate them before drawing empirical conclusions.
     """
+
+    explained = [
+        "When a trip comes up, and when it has to plan again: works out what each way of travelling costs it in money "
+        "(the price, plus its own value of time for waiting, counted one and a half times, for riding, and for "
+        "walking, counted twice) and chooses at random with odds that fall as the cost rises (a logit choice): "
+        "cheaper options are likelier, not certain.",
+        "In bad weather waiting and walking count for more.",
+        "When its car proposes a transfer to transit: accepts if, by the same reckoning, the transfer costs it less "
+        "than staying in the car.",
+        "While waiting: gives up when the whole wait would exceed one and a half times its patience and there is "
+        "another way to travel.",
+        "Its weights are behavioural assumptions, not estimates from data.",
+    ]
 
     def __init__(self, scale: float = 1.5, wait_weight: float = 1.5, walk_weight: float = 2.0,
                  price_tolerance: float = 0.2, deterministic: bool = False, plan_gain_usd: float = REVIEW_GAIN_USD,

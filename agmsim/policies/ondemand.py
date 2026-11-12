@@ -10,6 +10,9 @@ from .base import Policy, register_policy
 class RuleCab(Policy):
     """Takes every request, keeps its route, waits where it is: never uses the authority it is given."""
 
+    explained = ["Takes every request the service proposes, keeps the route it has, and waits where it dropped its "
+                 "passenger: it never uses the authority its level gives it."]
+
     def decide(self, obs):
         return Decision(obs.default.action, dict(obs.default.args), "rule: default behaviour")
 
@@ -26,6 +29,15 @@ class GreedyCab(Policy):
     * A free car moves to the place with the most recent requests per free car already there, if
       that beats where it is by ``reposition_margin`` and is at most ``max_reposition_min`` away.
     """
+
+    explained = [
+        "A proposed request (turning down from L2): takes it, unless it pays too little for the time it takes, under "
+        "0.60 USD a minute after driving costs. A car told to serve never turns a request down; a balanced one only "
+        "while other cars are free to take it.",
+        "Route (from L1): the fastest of the routes it is shown.",
+        "While free (L4): moves to the place with the most recent requests per free car already there, if that is "
+        "clearly better than where it is and at most 8 minutes away; otherwise it stays.",
+    ]
 
     def __init__(self, min_usd_per_min: float = 0.6, max_reposition_min: float = 8.0, reposition_margin: float = 1.0,
                  **params):

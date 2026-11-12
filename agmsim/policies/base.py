@@ -103,6 +103,24 @@ def register_policy(name: str, role: str = "any"):
     return deco
 
 
+def explain_policy(role: str, name: str) -> list[str]:
+    """What a registered decision model does for agents of kind ``role``, in plain sentences (for the guide).
+
+    A policy class says so in ``explained``: a list of sentences, or ``{kind: [...]}`` where one class
+    serves several kinds. Without it, the first paragraph of its docstring is used.
+    """
+    obj = next((POLICIES.get(key) for key in (f"{role}:{name}", f"any:{name}") if key in POLICIES), None)
+    if obj is None:
+        return []
+    told = getattr(obj, "explained", None)
+    if isinstance(told, dict):
+        told = told.get(role)
+    if told:
+        return list(told)
+    doc = (obj.__doc__ or "").strip().split("\n\n")[0]
+    return [" ".join(doc.split())] if doc else []
+
+
 def available_policies(role: str) -> list[str]:
     names = set()
     for key in POLICIES.names():

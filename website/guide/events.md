@@ -21,11 +21,11 @@ place can have opening hours.
 
 ```yaml
 events:
-  - {type: link_condition, label: crash on the Decarie expressway, at_seconds: 1800, until_seconds: 4200,
+  - {type: link_condition, label: crash on the Decarie expressway, at_seconds: 5400, until_seconds: 7800,
      links: [[8, 7]], factor: 0.3}
-  - {type: weather, label: snow, at_seconds: 0, until_seconds: 7200, speed_factor: 0.75, walk_factor: 0.85,
-     discomfort: 1.8}
-  - {type: demand_surge, poi: bell_centre, at_seconds: 3600, until_seconds: 4500, trips: 120}
+  - {type: weather, label: snow, at_seconds: 0, until_seconds: 21600, speed_factor: 0.7, walk_factor: 0.8,
+     discomfort: 2.0}
+  - {type: demand_surge, poi: bell_centre, at_seconds: 14400, until_seconds: 15300, trips: 120}
   - {type: poi_closure, poi: jean_talon_market, at_seconds: 2400}
   - {type: set_agency, kind: vehicle, agency: L3, at_seconds: 3000}
 ```
@@ -38,5 +38,6 @@ events:
 | `poi_closure` | closes a place early; those who may adapt their plans are told |
 | `set_agency` | changes the agency of a kind during the run |
 
-The testbed has one event, the crash on the Decarie expressway. Others are added with `--set events=[...]`
-or in a copy of the scenario.
+Times are seconds after the start of the run (06:00). The testbed has one event, the crash on the Decarie
+expressway at 07:30. On the page, **Events** switches it off and sets the weather to rain or snow; anything else
+is added with `--set events=[...]` or in a copy of the scenario.

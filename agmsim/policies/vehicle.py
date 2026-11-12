@@ -10,6 +10,12 @@ from .base import Policy, register_policy
 class RuleVehicle(Policy):
     """Fixed rules: take the fastest known route, never propose anything, charge only when forced to."""
 
+    explained = [
+        "Route: the fastest route it knows of. It does not weigh tolls, whatever it knows about its owner.",
+        "It never proposes anything to its owner.",
+        "Charging: goes to the first station offered, and only when the battery will not last to the destination.",
+    ]
+
     def decide(self, obs):
         if obs.trigger == "route":
             best = min(obs.context["routes"], key=lambda r: (r["eta_min"], r["route"]))
@@ -33,6 +39,17 @@ class OwnerCostVehicle(Policy):
 
     A myopic heuristic, not an optimal controller.
     """
+
+    explained = [
+        "Route (from L1): the fastest route it knows of. Where it knows its owner's value of time (from L2), the route "
+        "that costs the owner least instead: toll + driving cost + travel time at the owner's value of time.",
+        "Transfer (from L3): proposes to park and continue by transit when that gets the owner there at least 3 minutes "
+        "sooner than the quickest driving route, with a sentence saying why.",
+        "Charging (L4): when the battery will not last, the station with the least burden of detour, queue and price. "
+        "After dropping its owner it drives itself to charge if the battery is below a threshold (20% on the testbed).",
+        "Optionally it uses its memory: for some minutes after a change of route it changes again only for a large saving.",
+        "It looks one decision ahead; it is a simple heuristic, not an optimal controller.",
+    ]
 
     def __init__(self, transfer_gain_min: float = 3.0, top_up_below_pct: float = 55.0, explain: bool = True,
                  weigh_fare: bool = False, settle_min: float = 0.0, resettle_saving_min: float = 5.0, **params):

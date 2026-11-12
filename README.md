@@ -24,11 +24,12 @@ Experiments are run on one network, in the way much of transport research uses S
 simplified Montreal of 25 nodes and 51 two-way roads (`agmsim/montreal.py`), about 21 km by 17 km. It keeps
 what shapes traffic in the city: an island reached over seven bridges and one tunnel, a centre on its south side, the ring of
 expressways (A-40 Metropolitan, A-15 Decarie, Ville-Marie, A-25, A-20) and the arterials between them, with
-the South Shore and Laval at the far ends of the crossings. The scenario is a weekday morning, 07:00 to
-09:00, with every kind of agent the simulator has: 600 travellers who live where people live and go to named
+the South Shore and Laval at the far ends of the crossings. The scenario is a weekday morning, 06:00 to
+12:00 with its peak around 08:00, with every kind of agent the simulator has: 900 travellers who live where people live and go to named
 places (downtown offices, McGill, the airport, hospitals, markets), their cars, 40 on-demand cars, four
 transit lines on their own right of way, traffic lights in the inner city, seven charging stations, an
-orchestrator, and a crash on the Decarie expressway at 07:30.
+orchestrator, and a crash on the Decarie expressway at 07:30. A run with the built-in decision models takes about
+15 seconds.
 
 ```bash
 agmsim run montreal                                   # the testbed as it is
@@ -78,6 +79,13 @@ What the page shows:
   kind of agent. Click an entry to see its icon, what it is, what it may do (its functions, with those switched
   on at its level marked), all its settings, and what it is doing in the run: how often it was asked and why,
   what it chose, and its state at the moment shown on the map. A kind's name in the Agents table opens its entry.
+- **Agents** — who decides for each kind and how much it may decide. The page opens with a language model
+  (DeepSeek Flash) deciding for travellers, private cars, on-demand cars, charging stations and the orchestrator;
+  traffic lights and transit vehicles, which decide every few seconds, start on their built-in models. Three
+  buttons switch every kind at once. A language model takes about a second per decision and the run waits for it:
+  about half an hour for the testbed as the page opens, a few seconds with built-in models only. (On the command
+  line and in experiments the testbed runs on built-in models unless you say otherwise.)
+- **Events** — the scenario's own events can be switched off, and the weather set to rain or snow for the run.
 - **Assistant** — say what you want to run ("evening plans with 200 travellers, vehicles at L3 with 30%
   staying at L0, slow the bridge from 17:30 to 18:30, then run it") and a language model fills in the
   form. Its proposal is checked like any configuration before it is used (`agmsim/assistant.py`); what the

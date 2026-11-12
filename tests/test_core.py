@@ -839,7 +839,7 @@ def test_assistant_turns_a_request_into_checked_settings():
                    '"set": {"agents.vehicle.agency": "L3", "agents.traveler.count": 300}, "run": true}')
     out = ask("300 travellers and vehicles at level 3, then run it")
     assert out["set"] == {"agents.vehicle.agency": "L3", "agents.traveler.count": 300} and out["run"] and "error" not in out
-    assert "montreal" in seen[0].system and "L3" in seen[0].system and "clock_start: 07:00" in seen[0].user
+    assert "montreal" in seen[0].system and "L3" in seen[0].system and "clock_start: 06:00" in seen[0].user
     # a proposal that does not hold is sent back once with the reason; the corrected one is used
     replies += ['{"reply": "x", "set": {"interventions": [{"type": "link_condition", "at_seconds": 0, "factor": 0.1, "links": [[0, 21]]}]}}',
                 '{"reply": "No road joins those two, so I slowed the Victoria Bridge instead.", "set": {"interventions": '

@@ -18,6 +18,15 @@ class DefaultPolicy(Policy):
     """Always takes the default action: timetable bus, fixed tariff, hands-off operator, fixed-time signal
     (which, where it cooperates, means doing what the orchestrator asks for)."""
 
+    explained = {
+        "bus": ["Leaves every stop as soon as boarding is done: it runs to its timetable, whatever its level allows."],
+        "evcs": ["Keeps its fixed price and serves the cars in the order in which they arrived."],
+        "signal": ["Follows the fixed-time plan: every phase gets the same green, in turn.",
+                   "Where it cooperates with the orchestrator (L2), it gives the green the orchestrator asks for."],
+        "operator": ["Changes nothing during the run: no advisory is published, and the charge and transit priority stay as "
+                     "they were set at the start."],
+    }
+
     def decide(self, obs):
         return Decision(obs.default.action, dict(obs.default.args), "rule: default behaviour")
 
@@ -25,6 +34,13 @@ class DefaultPolicy(Policy):
 @register_policy("algorithm", role="bus")
 class HeadwayBus(Policy):
     """Holds for passengers about to arrive and for bunching; skips empty stops."""
+
+    explained = [
+        "Holds at a stop for a passenger who is about to arrive, unless many people are already on board (more than 12).",
+        "Holds briefly when it is too close behind the vehicle ahead on its line, so that vehicles do not bunch.",
+        "Skips the next stop when nobody is waiting there (from L2).",
+        "Otherwise it leaves as soon as boarding is done.",
+    ]
 
     def __init__(self, max_onboard_for_hold: int = 12, bunching_ratio: float = 0.6, **params):
         super().__init__(**params)
@@ -52,6 +68,12 @@ class HeadwayBus(Policy):
 class LoadPricingStation(Policy):
     """Raises the price when busy, lowers it when empty; serves the emptiest battery first."""
 
+    explained = [
+        "Price, at every review: the highest multiplier of its tariff while cars are queueing, a raised one when its "
+        "chargers were busy 70% of the time or more, the lowest when it stood empty, and the plain tariff otherwise.",
+        "Who charges next when a charger comes free and several cars wait (from L2): the car with the emptiest battery.",
+    ]
+
     def decide(self, obs):
         if obs.trigger == "queue":
             row = min(obs.context["queue"], key=lambda r: (r["battery_pct"], r["vehicle_id"]))
@@ -78,6 +100,14 @@ class PressureSignal(Policy):
     pressure exceeds the current one's by ``switch_margin`` (a switch costs time), or when the
     current phase has run empty.
     """
+
+    explained = [
+        "Counts for each phase the vehicles held at its stop lines, plus half of those approaching.",
+        "Keeps the green while the current phase has the most; gives the green to the other phase when that one has "
+        "clearly more (a switch costs a few seconds), or when the current one has run empty.",
+        "Where it cooperates with the orchestrator (L2): gives the phase the orchestrator asks for, and counts a direction "
+        "the orchestrator favours for more.",
+    ]
 
     def __init__(self, approaching_weight: float = 0.5, switch_margin: float = 1.0, favour_bonus: float = 1.3, **params):
         super().__init__(**params)
@@ -112,6 +142,15 @@ class PressureSignal(Policy):
 class ResponsiveOperator(Policy):
     """Publishes advisories when the network is disturbed, prices the cordon by its congestion,
     and gives buses priority when they carry more people than cars do."""
+
+    explained = [
+        "Advisory (from L1): publishes one when there is an incident or traffic falls below 70% of free-flow speed, and "
+        "withdraws it when traffic is back above 90%. Cars that are told avoid the slow roads, whatever their own level.",
+        "Traffic lights (L2): favours the direction in which vehicles have waited at least twice as long as in the other, "
+        "and asks a junction that holds three or more vehicles at red for green.",
+        "Charge to enter the centre (L2): one step up when the centre is congested, one step down when it flows freely.",
+        "Transit priority (L2): on when more people are waiting for or riding transit than are in cars, off when few are.",
+    ]
 
     def __init__(self, congested_pct: float = 70.0, free_pct: float = 90.0, imbalance: float = 2.0,
                  min_waiting: float = 60.0, hotspot: int = 3, **params):
