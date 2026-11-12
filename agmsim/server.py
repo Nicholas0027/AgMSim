@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 from . import kinds as _kinds, policies as _policies  # noqa: F401
 from . import assistant
 from .agency import LEVEL_NAMES
-from .config import DRIVING_KINDS, LLM_PRESETS, Config, list_scenarios
+from .config import DRIVING_KINDS, LLM_PRESETS, TESTBED, Config, list_scenarios
 from .engine import Simulation
 from .kinds.base import KINDS
 from .llm import LLM_BACKENDS, load_env_file
@@ -226,7 +226,7 @@ def route(method: str, path: str, query: Optional[dict] = None, body: Optional[d
             if online:
                 RUNS.clear()
             overrides = list(body.get("overrides", [])) + (["llm.max_concurrency=1"] if online else [])
-            RUNS[run_id] = Run(run_id, body.get("scenario", "demo_3x3"), overrides, threaded=not online)
+            RUNS[run_id] = Run(run_id, body.get("scenario", TESTBED), overrides, threaded=not online)
         return 200, {"id": run_id}
     elif parts == ["api", "chat"]:               # the assistant: a request in words -> proposed settings
         return 200, assistant.configure(body or {})

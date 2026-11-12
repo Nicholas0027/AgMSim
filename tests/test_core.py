@@ -16,11 +16,16 @@ from agmsim.policies.llm_policy import parse_decision_text
 from agmsim.replay import replay
 
 QUIET = ["record.dir=null"]
-SCENARIOS = Path(__file__).parent.parent / "experiments" / "scenarios"
+SCENARIOS = Path(__file__).parent / "scenarios"      # small scenarios the tests are written against
 
 
-def run(scenario="demo_3x3", overrides=(), **kwargs):
-    sim = Simulation(scenario, overrides=[*QUIET, *overrides], **kwargs)
+def fx(name: str) -> str:
+    """The path of one of them."""
+    return str(SCENARIOS / f"{name}.yaml")
+
+
+def run(scenario=None, overrides=(), **kwargs):
+    sim = Simulation(scenario or fx("demo_3x3"), overrides=[*QUIET, *overrides], **kwargs)
     return sim, sim.run()
 
 
@@ -43,7 +48,7 @@ def test_two_class_shorthand_maps_to_kinds():
 
 
 def test_override_of_shorthand_reaches_every_machine_kind():
-    cfg = Config.load("city_multimodal", ["machine_agents.use_llm=true", "llm.backend=mock"])
+    cfg = Config.load(fx("city_multimodal"), ["machine_agents.use_llm=true", "llm.backend=mock"])
     assert all(getattr(cfg.agents, k).use_llm for k in ("vehicle", "bus", "evcs", "operator"))
     assert cfg.agents.traveler.use_llm is False
 
@@ -112,7 +117,7 @@ def test_agency_can_change_during_a_run():
 
 
 def test_every_trip_ends_in_exactly_one_outcome():
-    sim, res = run("city_multimodal")
+    sim, res = run(fx("city_multimodal"))
     m = res.metrics["travelers"]
     assert m["completed"] + m["abandoned"] + m["unfinished"] == m["trips"] == 400
     for tr in sim.world.travelers.values():
@@ -152,7 +157,7 @@ def test_same_seed_same_run_and_common_random_numbers():
 
 
 def test_recorded_run_replays_identically(tmp_path):
-    sim = Simulation("city_multimodal", overrides=[f"record.dir={tmp_path}", "record.run_name=r",
+    sim = Simulation(fx("city_multimodal"), overrides=[f"record.dir={tmp_path}", "record.run_name=r",
                                                    "human_agents.use_llm=true", "machine_agents.use_llm=true",
                                                    "llm.backend=mock", "llm.params={error_rate: 0.1}"])
     res = sim.run()
@@ -366,7 +371,7 @@ def test_policy_object_can_be_passed_directly():
         seen.append(obs.kind)
         return obs.default
 
-    _, res = run("city_multimodal", policies={"operator": watcher})
+    _, res = run(fx("city_multimodal"), policies={"operator": watcher})
     assert seen and set(seen) == {"operator"} and res.metrics["decisions"]["operator"]["exercised"] == 0
 
 
@@ -389,7 +394,7 @@ def test_web_interface_api():
         info = call("/api/meta")
         assert {"traveler", "vehicle", "bus", "evcs", "operator"} <= set(info["kinds"])
         assert info["llm_presets"]["deepseek"]["key_env"] == "DEEPSEEK_API_KEY"
-        run_id = call("/api/run", {"scenario": "demo_3x3", "overrides": ["agents.vehicle.agency=L2"]})["id"]
+        run_id = call("/api/run", {"scenario": fx("demo_3x3"), "overrides": ["agents.vehicle.agency=L2"]})["id"]
         for _ in range(100):
             view = call(f"/api/run/{run_id}?frames=0&decisions=0")
             if view["status"] in ("done", "error"):
@@ -406,7 +411,7 @@ def test_web_interface_api():
 
 def test_mix_gives_nested_sub_populations():
     def levels(share):
-        sim = Simulation("demo_3x3", overrides=[*QUIET, "agents.vehicle.agency=L0",
+        sim = Simulation(fx("demo_3x3"), overrides=[*QUIET, "agents.vehicle.agency=L0",
                                                 f"agents.vehicle.mix=[{{share: {share}, agency: L1}}]"])
         return {a for a, p in sim.agency.items() if sim.specs[a].kind == "vehicle" and p.level == "L1"}, sim
 
@@ -426,30 +431,22 @@ def test_paired_differences_use_common_seeds():
     assert "diff" not in out["a"]
 
 
-def test_designed_experiments_separate_the_arms():
-    """Smoke test of two experiment designs on two seeds: the direction of the effect must show."""
+def test_an_experiment_on_the_testbed_separates_its_arms():
+    """Smoke test of an experiment design on one seed: the direction of the effect must show."""
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent.parent / "experiments"))
-    from suite import EXPERIMENTS, HERE
+    from suite import EXPERIMENTS
+    from agmsim.config import TESTBED
     from agmsim.experiment import run_arms
 
-    def mean(rows, arm, key):
-        vals = [r[key] for r in rows if r["arm"] == arm]
-        return sum(vals) / len(vals)
-
-    exp = EXPERIMENTS["incident"]
-    rows = run_arms(str(HERE / "scenarios" / exp["scenario"]), exp["arms"], [1, 2])
-    base = mean(rows, "车 L0 · 运营方 L0", "travelers.trip_time_s_mean")
-    assert mean(rows, "车 L1 · 运营方 L0", "travelers.trip_time_s_mean") < 0.5 * base
-    assert mean(rows, "车 L0 · 运营方 L1", "travelers.trip_time_s_mean") < 0.5 * base
-
-    exp = EXPERIMENTS["toll"]
-    rows = run_arms(str(HERE / "scenarios" / exp["scenario"]), exp["arms"], [1, 2])
-    assert mean(rows, "车 L2（算法，按车主时间价值）", "vehicles.owner_alignment_rate") == 1.0
-    assert mean(rows, "车 L2（规则，仍只求快）", "vehicles.owner_alignment_rate") < 0.8
-    assert (mean(rows, "车 L2（算法，按车主时间价值）", "vehicles.tolls_usd")
-            < mean(rows, "车 L1（只求快）", "vehicles.tolls_usd"))
+    exp = EXPERIMENTS["vehicle_agency_alone"]
+    arms = {label: {**exp["base"], **ov} for label, ov in list(exp["arms"].items())[:2]}        # cars at L0 and at L1
+    rows = {row["arm"]: row for row in run_arms(TESTBED, arms, [1])}
+    still, rerouting = (rows[label] for label in arms)
+    assert still["vehicles.reroutes"] == 0 < rerouting["vehicles.reroutes"]
+    assert rerouting["outcomes.traffic_speed_mph"] > still["outcomes.traffic_speed_mph"] + 2
+    assert rerouting["outcomes.vht_hours"] < still["outcomes.vht_hours"]
 
 
 # ---------------------------------------------------------------- decision benchmark
@@ -694,8 +691,9 @@ def test_web_interface_runs_without_a_server():
 
     info = json.loads(browser.request("/api/meta"))
     assert info["online"] and info["llm_presets"]["deepseek"]["key_env"] == "DEEPSEEK_API_KEY"
-    assert "evening_plans" in info["scenarios"]
-    run_id = json.loads(browser.request("/api/run", json.dumps({"scenario": "demo_3x3", "overrides": []})))["id"]
+    assert list(info["scenarios"]) == ["montreal"]                     # the testbed is the one scenario of the page
+    quick = ["simulation.duration_seconds=2400", "agents.traveler.count=150"]
+    run_id = json.loads(browser.request("/api/run", json.dumps({"scenario": "montreal", "overrides": quick})))["id"]
     assert RUNS[run_id].thread is None
     slices = 0
     while browser.advance(0.01):
@@ -756,7 +754,7 @@ def test_online_demo_takes_the_visitors_key_and_calls_the_model_through_the_brow
     def run_with(key):
         if key is not None:
             assert json.loads(browser.request("/api/key", json.dumps({"env": "DEEPSEEK_API_KEY", "key": key}))) == {"ok": True}
-        body = {"scenario": "demo_3x3", "overrides": ["agents.vehicle.use_llm=true", "llm.preset=deepseek"]}
+        body = {"scenario": fx("demo_3x3"), "overrides": ["agents.vehicle.use_llm=true", "llm.preset=deepseek"]}
         run_id = json.loads(browser.request("/api/run", json.dumps(body)))["id"]
         while browser.advance(1.0):
             pass
@@ -778,7 +776,7 @@ def test_frames_carry_what_the_charts_need_and_an_agents_day_can_be_asked_for():
     from agmsim import browser
     from agmsim.server import RUNS
 
-    body = {"scenario": "evening_plans", "overrides": ["agents.traveler.count=120", "network.capacity_scale=0.1"]}
+    body = {"scenario": fx("evening_plans"), "overrides": ["agents.traveler.count=120", "network.capacity_scale=0.1"]}
     run_id = json.loads(browser.request("/api/run", json.dumps(body)))["id"]
     while browser.advance(5.0):
         pass
@@ -803,7 +801,7 @@ def test_frames_carry_what_the_charts_need_and_an_agents_day_can_be_asked_for():
 
 
 def test_outcome_variables_waiting_vmt_vht_and_traffic_speed():
-    sim, res = run("city_multimodal")
+    sim, res = run(fx("city_multimodal"))
     o, w = res.metrics["outcomes"], sim.world
     assert o["vmt_miles"] == pytest.approx(o["vkt_km"] / 1.609344, rel=1e-3) and o["vkt_km"] > res.metrics["vehicles"]["vkt_km"]   # buses count too
     assert o["traffic_speed_mph"] == pytest.approx(o["vmt_miles"] / o["vht_hours"], rel=1e-3)
@@ -832,34 +830,34 @@ def test_assistant_turns_a_request_into_checked_settings():
 
     llm = {"backend": "scripted", "model": "x"}
     ask = lambda text, **extra: assistant.configure({"messages": [{"role": "user", "text": text}],   # noqa: E731
-                                                     "scenario": "evening_plans", "llm": llm, **extra})
+                                                     "scenario": "montreal", "llm": llm, **extra})
     replies.append('Sure. {"reply": "Vehicles now negotiate; 300 people.", "scenario": null, '
                    '"set": {"agents.vehicle.agency": "L3", "agents.traveler.count": 300}, "run": true}')
     out = ask("300 travellers and vehicles at level 3, then run it")
     assert out["set"] == {"agents.vehicle.agency": "L3", "agents.traveler.count": 300} and out["run"] and "error" not in out
-    assert "evening_plans" in seen[0].system and "L3" in seen[0].system and "clock_start: 16:30" in seen[0].user
+    assert "montreal" in seen[0].system and "L3" in seen[0].system and "clock_start: 07:00" in seen[0].user
     # a proposal that does not hold is sent back once with the reason; the corrected one is used
-    replies += ['{"reply": "x", "set": {"agents.bus.agency": "L1"}}',
-                '{"reply": "This scenario has no buses, so I slowed the bridge instead.", "set": {"interventions": '
-                '[{"type": "link_condition", "at_seconds": 3600, "until_seconds": 7200, "factor": 0.05, "links": [[7, 20]]}]}}']
-    out = ask("let the buses hold at stops")
-    assert out["set"]["interventions"][0]["links"] == [[7, 20]] and "has no bus" in seen[-1].user
+    replies += ['{"reply": "x", "set": {"interventions": [{"type": "link_condition", "at_seconds": 0, "factor": 0.1, "links": [[0, 21]]}]}}',
+                '{"reply": "No road joins those two, so I slowed the Victoria Bridge instead.", "set": {"interventions": '
+                '[{"type": "link_condition", "at_seconds": 3600, "until_seconds": 7200, "factor": 0.05, "links": [[2, 21]]}]}}']
+    out = ask("close the way from downtown to Saint-Lambert")
+    assert out["set"]["interventions"][0]["links"] == [[2, 21]] and "no road between" in seen[-1].user
     # nothing usable twice: nothing is changed, and the reason is reported
     replies += ['{"reply": "x", "set": {"llm.model": "other"}}', '{"reply": "x", "set": {"interventions": '
-                '[{"type": "link_condition", "at_seconds": 0, "factor": 0.1, "links": [[0, 31]]}]}}']
+                '[{"type": "link_condition", "at_seconds": 0, "factor": 0.1, "links": [[0, 21]]}]}}']
     out = ask("use another model")
     assert out["set"] == {} and not out["run"] and "no road between" in out["error"]
     for bad in ({"agents.vehicle.agency": "L9"}, {"agents.vehicle.non_llm_policy": "magic"}, {"simulation.sed": 1},
                 {"record.dir": "x"}, {"agents.traveler.mix": [{"agency": "L1"}]}):
-        assert assistant.check("evening_plans", bad)
-    assert assistant.check("evening_plans", {"agents.vehicle.mix": [{"share": 0.3, "agency": "L3"}], "network.capacity_scale": 0.1}) is None
+        assert assistant.check("montreal", bad)
+    assert assistant.check("montreal", {"agents.vehicle.mix": [{"share": 0.3, "agency": "L3"}], "network.capacity_scale": 0.1}) is None
     assert assistant.check("nowhere", {}).startswith("there is no scenario")
     assert "needs a language model" in assistant.configure({"messages": [{"role": "user", "text": "hi"}], "llm": {"backend": "mock"}})["error"]
     assert assistant.extract_json('<think>{"a": 1}</think> text {"reply": "say \\"hi\\" {now}", "set": {}} tail')["reply"] == 'say "hi" {now}'
     replies.append('{"reply": "ok", "set": {"simulation.seed": 5}}')            # the page reaches it through the same router
     via = json.loads(browser.request("/api/chat", json.dumps({"messages": [{"role": "user", "text": "seed 5"}],
-                                                              "scenario": "demo_3x3", "llm": llm})))
-    assert via["set"] == {"simulation.seed": 5} and via["scenario"] == "demo_3x3"
+                                                              "scenario": "montreal", "llm": llm})))
+    assert via["set"] == {"simulation.seed": 5} and via["scenario"] == "montreal"
 
 
 # ---------------------------------------------------------------- traffic lights and the orchestrator
@@ -898,11 +896,11 @@ LIGHTS = ["agents.traveler.count=300", "simulation.duration_seconds=2400", "dema
 
 
 def test_lights_with_agency_cut_delay_and_the_orchestrator_needs_lights_that_listen(tmp_path):
-    fixed_sim, fixed = run("city_signals", [*LIGHTS, "agents.signal.agency=L0"])
-    _, own = run("city_signals", LIGHTS)
-    listen_sim, listen = run("city_signals", [*LIGHTS, "agents.signal.agency=L2", "agents.signal.non_llm_policy=rule",
+    fixed_sim, fixed = run(fx("city_signals"), [*LIGHTS, "agents.signal.agency=L0"])
+    _, own = run(fx("city_signals"), LIGHTS)
+    listen_sim, listen = run(fx("city_signals"), [*LIGHTS, "agents.signal.agency=L2", "agents.signal.non_llm_policy=rule",
                                               "agents.operator.agency=L2"])
-    _, deaf = run("city_signals", [*LIGHTS, "agents.signal.agency=L0", "agents.operator.agency=L2"])
+    _, deaf = run(fx("city_signals"), [*LIGHTS, "agents.signal.agency=L0", "agents.operator.agency=L2"])
     trip = lambda r: r.metrics["travelers"]["trip_time_s_mean"]         # noqa: E731
     lights = lambda r: r.metrics["signals"]                             # noqa: E731
     assert lights(fixed)["junctions"] == 32 and fixed.metrics["decisions"]["signal"]["decided"] == 0     # the 4 corners have none
@@ -923,23 +921,23 @@ def test_lights_with_agency_cut_delay_and_the_orchestrator_needs_lights_that_lis
         seen.setdefault(obs.kind, obs)
         return obs.default
 
-    run("city_signals", [*LIGHTS, "agents.signal.agency=L2", "agents.operator.agency=L2", "simulation.duration_seconds=900"],
+    run(fx("city_signals"), [*LIGHTS, "agents.signal.agency=L2", "agents.operator.agency=L2", "simulation.duration_seconds=900"],
         policies={"operator": watch, "signal": watch})
     assert "slowest_roads" in seen["operator"].context and seen["operator"].has("favour_direction")
     assert set(seen["operator"].context["traffic_lights"]["vehicle_seconds_waited_since_last_review"]) == {"east-west", "north-south"}
     assert {p["phase"] for p in seen["signal"].context["phases"]} == {"east-west", "north-south"}
     assert "orchestrator" in seen["signal"].context and "next_junctions" in seen["signal"].context
     # same seed, same run; and the recorded decisions replay to the same state
-    _, again = run("city_signals", LIGHTS)
+    _, again = run(fx("city_signals"), LIGHTS)
     assert again.state_digest == own.state_digest and again.trace_digest == own.trace_digest
-    saved = Simulation("city_signals", overrides=[f"record.dir={tmp_path}", "record.run_name=lights", *LIGHTS,
+    saved = Simulation(fx("city_signals"), overrides=[f"record.dir={tmp_path}", "record.run_name=lights", *LIGHTS,
                                                   "agents.signal.agency=L2", "agents.operator.agency=L2"]).run()
     assert replay(saved.run_dir)["identical"]
     frame = next(r for r in saved.records if r["type"] == "frame" and r["tick"] > 600)
     header = next(r for r in saved.records if r["type"] == "header")
     assert len(frame["signal"]) == 32 and all(row[2] in (-1, 0, 1) for row in frame["signal"])
     assert set(header["signals"][frame["signal"][0][0]]) == {"node", "names", "from"}
-    _, none = run("city_signals", [*LIGHTS, "agents.signal.junctions=[]"])
+    _, none = run(fx("city_signals"), [*LIGHTS, "agents.signal.junctions=[]"])
     assert "signals" not in none.metrics and trip(none) < trip(own)                                        # no junction delay at all
 
 
@@ -949,7 +947,7 @@ CABS = ["agents.traveler.count=150", "agents.ondemand.fleet=25", "simulation.dur
 
 
 def test_on_demand_cars_carry_travellers_who_call_them(tmp_path):
-    sim, base = run("city_ondemand", CABS)
+    sim, base = run(fx("city_ondemand"), CABS)
     w, od = sim.world, base.metrics["ondemand"]
     assert "vehicle" not in sim.kinds and od["cars"] == 25 and od["rides"] > 100
     reqs = list(w.requests.values())
@@ -965,18 +963,18 @@ def test_on_demand_cars_carry_travellers_who_call_them(tmp_path):
     assert all(c.proposal is None and not c.queued for c in w.cabs.values())
 
     # L2 with a profit objective turns poorly paid requests down; they go to another car
-    picky_sim, picky = run("city_ondemand", [*CABS, "agents.ondemand.agency=L2", "agents.ondemand.objective=profit"])
+    picky_sim, picky = run(fx("city_ondemand"), [*CABS, "agents.ondemand.agency=L2", "agents.ondemand.objective=profit"])
     assert picky.metrics["ondemand"]["declined"] > 0
     turned_down = [r for r in picky_sim.world.requests.values() if r.declined_by and r.state == "done"]
     assert turned_down and all(r.car not in r.declined_by for r in turned_down)
-    _, serving = run("city_ondemand", [*CABS, "agents.ondemand.agency=L2", "agents.ondemand.objective=service"])
+    _, serving = run(fx("city_ondemand"), [*CABS, "agents.ondemand.agency=L2", "agents.ondemand.objective=service"])
     assert serving.metrics["ondemand"]["declined"] == 0
     # L4 also moves while free
-    _, roaming = run("city_ondemand", [*CABS, "agents.ondemand.agency=L4", "agents.ondemand.objective=service"])
+    _, roaming = run(fx("city_ondemand"), [*CABS, "agents.ondemand.agency=L4", "agents.ondemand.objective=service"])
     assert roaming.metrics["ondemand"]["repositions"] > 0 and roaming.metrics["ondemand"]["empty_km_share"] > od["empty_km_share"]
 
     # too few cars: people give up, walk or stay; nobody is left hanging and no car is tied to a dead request
-    few_sim, few = run("city_ondemand", ["agents.traveler.count=150", "agents.ondemand.fleet=3", "simulation.duration_seconds=3000"])
+    few_sim, few = run(fx("city_ondemand"), ["agents.traveler.count=150", "agents.ondemand.fleet=3", "simulation.duration_seconds=3000"])
     fw = few_sim.world
     assert few.metrics["ondemand"]["cancelled"] > 0 and few.metrics["travelers"]["gave_up_waiting"] == few.metrics["ondemand"]["cancelled"]
     assert all(t.ride is None or fw.requests[t.ride].state in ("open", "proposed", "assigned", "on_board") for t in fw.travelers.values())
@@ -991,7 +989,7 @@ def test_on_demand_cars_carry_travellers_who_call_them(tmp_path):
         seen.setdefault((obs.kind, obs.trigger), obs)
         return obs.default
 
-    run("city_ondemand", ["agents.traveler.count=150", "agents.ondemand.fleet=6", "agents.ondemand.agency=L4",
+    run(fx("city_ondemand"), ["agents.traveler.count=150", "agents.ondemand.fleet=6", "agents.ondemand.agency=L4",
                           "simulation.duration_seconds=2400"], policies={"ondemand": watch, "traveler": watch})
     proposal = seen[("ondemand", "proposal")]
     assert {"pickup_min", "trip_km", "fare_usd", "traveller_has_waited_min"} <= set(proposal.context["request"])
@@ -1002,16 +1000,16 @@ def test_on_demand_cars_carry_travellers_who_call_them(tmp_path):
     assert any(o["option"] == "ride" for o in seen[("traveler", "need")].context["options"])
 
     # same seed, same run; recorded decisions replay to the same state; cars stop at traffic lights too
-    _, again = run("city_ondemand", CABS)
+    _, again = run(fx("city_ondemand"), CABS)
     assert again.state_digest == base.state_digest and again.trace_digest == base.trace_digest
-    saved = Simulation("city_ondemand", overrides=[f"record.dir={tmp_path}", "record.run_name=cabs", *CABS,
+    saved = Simulation(fx("city_ondemand"), overrides=[f"record.dir={tmp_path}", "record.run_name=cabs", *CABS,
                                                    "agents.ondemand.agency=L4"]).run()
     assert replay(saved.run_dir)["identical"]
     frame = next(r for r in saved.records if r["type"] == "frame" and r["tick"] > 900)
     assert len(frame["ondemand"]) == 25 and {row[3] for row in frame["ondemand"]} <= {"idle", "to_pickup", "occupied", "repositioning"}
-    lit_sim, lit = run("city_ondemand", [*CABS, "agents.signal.junctions=all"])
+    lit_sim, lit = run(fx("city_ondemand"), [*CABS, "agents.signal.junctions=all"])
     assert lit.metrics["signals"]["crossings"] > 0 and lit.metrics["outcomes"]["wait_time_s_mean"] > base.metrics["outcomes"]["wait_time_s_mean"]
-    mixed_sim, mixed = run("city_multimodal", ["agents.ondemand.fleet=15"])                     # next to private cars, buses, charging
+    mixed_sim, mixed = run(fx("city_multimodal"), ["agents.ondemand.fleet=15"])                     # next to private cars, buses, charging
     assert mixed.metrics["ondemand"]["rides"] > 0 and {"car", "bus", "ride"} <= set(mixed.metrics["travelers"]["mode_share"])
 
 
@@ -1021,9 +1019,9 @@ def test_on_demand_cars_carry_travellers_who_call_them(tmp_path):
 def test_trips_go_to_places_that_fit_their_purpose_and_events_change_the_day():
     from agmsim.pois import PURPOSE_PLACE
 
-    sim, day = run("town_places")
+    sim, day = run(fx("town_places"))
     w = sim.world
-    other, _ = run("town_places", ["simulation.seed=9"])
+    other, _ = run(fx("town_places"), ["simulation.seed=9"])
     assert {p.id: p.node for p in w.pois.values()} == {p.id: p.node for p in other.world.pois.values()}     # places do not move with the seed
     assert len({p.node for p in w.pois.values()}) == len(w.pois) == 16 and w.pois["stadium"].node == 21
     kinds = {p.id: p.type for p in w.pois.values()}
@@ -1037,8 +1035,8 @@ def test_trips_go_to_places_that_fit_their_purpose_and_events_change_the_day():
 
     events = sim.cfg.interventions
     only = lambda kind: ["events=" + json.dumps([e for e in events if e["type"] == kind])]              # noqa: E731
-    _, quiet = run("town_places", ["events=[]"])
-    _, rain = run("town_places", only("weather"))
+    _, quiet = run(fx("town_places"), ["events=[]"])
+    _, rain = run(fx("town_places"), only("weather"))
     walk = lambda r: r.metrics["travelers"]["mode_share"].get("walk", 0.0)                             # noqa: E731
     wait = lambda r: r.metrics["outcomes"]["wait_time_s_mean"]                                         # noqa: E731
     assert quiet.metrics["travelers"]["trips"] == 320 and day.metrics["travelers"]["trips"] == 440
@@ -1047,7 +1045,7 @@ def test_trips_go_to_places_that_fit_their_purpose_and_events_change_the_day():
 
     # everybody sees the weather while it lasts, and a traveller sees the place they are going to
     seen = []
-    run("town_places", only("weather"), policies={"traveler": lambda obs: seen.append(obs) or obs.default})
+    run(fx("town_places"), only("weather"), policies={"traveler": lambda obs: seen.append(obs) or obs.default})
     wet = [o for o in seen if "environment" in o.context]
     assert wet and all(o.context["environment"]["weather"] == "heavy rain" and 1200 <= o.tick * 2 < 3600 for o in wet)
     assert any("environment" not in o.context for o in seen)
@@ -1057,7 +1055,7 @@ def test_trips_go_to_places_that_fit_their_purpose_and_events_change_the_day():
     assert len(header["pois"]) == 16 and {"id", "name", "type", "node", "closes"} <= set(header["pois"][0])
     frames = [r for r in day.records if r["type"] == "frame"]
     assert any("environment" in f for f in frames) and "environment" not in frames[0]
-    _, again = run("town_places")
+    _, again = run(fx("town_places"))
     assert again.state_digest == day.state_digest
     with pytest.raises(ConfigError, match="external event"):
         Config.from_dict({"events": [{"type": "earthquake", "at_seconds": 0}]})
@@ -1111,12 +1109,12 @@ def test_mechanism_settings_are_written_per_kind_and_checked():
     old = Config.from_dict({"agents": {"vehicle": {"link_conditions": "none", "local_radius_m": 500}}})
     assert (old.agents.vehicle.observation.traffic, old.agents.vehicle.observation.radius_m) == ("none", 500)
     with pytest.raises(ConfigError, match="observation.traffic"):
-        Config.load("demo_3x3", ["agents.vehicle.observation.traffic=nearby"])
+        Config.load(fx("demo_3x3"), ["agents.vehicle.observation.traffic=nearby"])
     with pytest.raises(ConfigError, match="find their own way"):          # a bus does not choose its roads
-        Config.load("city_multimodal", ["agents.bus.interaction.share_traffic=true"])
+        Config.load(fx("city_multimodal"), ["agents.bus.interaction.share_traffic=true"])
     with pytest.raises(ConfigError, match="negative"):
-        Config.load("demo_3x3", ["agents.traveler.memory.decisions=-1"])
-    sim = Simulation("demo_3x3", overrides=QUIET)
+        Config.load(fx("demo_3x3"), ["agents.traveler.memory.decisions=-1"])
+    sim = Simulation(fx("demo_3x3"), overrides=QUIET)
     header = sim.recorder.records[0]["kinds"]
     assert header["vehicle"]["mechanisms"]["observation"] == {"traffic": "global"}
     assert header["traveler"]["mechanisms"] == {"memory": {"decisions": 4}}
@@ -1296,7 +1294,7 @@ def test_routes_can_be_shown_and_remembered_by_the_junctions_they_pass():
     assert not any("via_nodes" in row for r in plain.records if r.get("type") == "decision" and r["kind"] == "vehicle"
                    and "obs" in r for row in r["obs"]["context"]["routes"])
     with pytest.raises(ConfigError, match="find their own way"):
-        Config.load("city_multimodal", ["agents.bus.observation.route_roads=true"])
+        Config.load(fx("city_multimodal"), ["agents.bus.observation.route_roads=true"])
 
 
 def test_routes_can_be_shown_and_remembered_by_the_name_of_their_way():
@@ -1336,7 +1334,7 @@ def test_routes_can_be_shown_and_remembered_by_the_name_of_their_way():
                    if r.get("type") == "decision" and r["kind"] == "vehicle" and "obs" in r for row in r["obs"]["context"]["routes"])
     assert sim._mechanisms("vehicle")["observation"]["route_names"] is True
     with pytest.raises(ConfigError, match="find their own way"):
-        Config.load("city_multimodal", ["agents.bus.observation.route_names=true"])
+        Config.load(fx("city_multimodal"), ["agents.bus.observation.route_names=true"])
 
 
 def test_a_new_destination_starts_new_names():
@@ -1359,15 +1357,14 @@ def test_the_testbed_is_a_simplified_montreal_with_every_kind_of_agent():
     assert list_scenarios()[0] == "montreal"                     # what the page opens with
     sim, res = run("montreal", ["simulation.duration_seconds=1200"])
     net = sim.world.net
-    assert len(net.nodes) == len(NODES) == 37 and len(net.links) == 2 * len(ROADS) == 152
+    assert len(net.nodes) == len(NODES) == 25 and len(net.links) == 2 * len(ROADS) == 102
     assert net.names[NODE["downtown"]] == "Downtown" and sim._header()["network"]["names"]["0"] == "Downtown"
     # an island: the South Shore is reached over the crossings only
-    crossings = {"Champlain Bridge", "Victoria Bridge", "Jacques-Cartier Bridge", "Lafontaine Tunnel", "Mercier Bridge"}
-    south = {NODE[name] for name in ("longueuil", "brossard", "st_lambert", "boucherville", "kahnawake")}
-    laval = {NODE[name] for name in ("laval_w", "laval_c", "laval_e")}
-    into_south = {net.road_names[(link.u, link.v)] for link in net.links if link.v in south and link.u not in south | laval}
+    crossings = {"Champlain Bridge", "Victoria Bridge", "Jacques-Cartier Bridge", "Lafontaine Tunnel"}
+    south = {NODE[name] for name in ("longueuil", "brossard", "st_lambert")}
+    into_south = {net.road_names[(link.u, link.v)] for link in net.links if link.v in south and link.u not in south}
     assert into_south == crossings
-    assert 20_000 < net.length(NODE["west_island"], NODE["downtown"]) < 32_000
+    assert 12_000 < net.length(NODE["dorval"], NODE["downtown"]) < 20_000
     assert set(sim.kinds) == {"traveler", "vehicle", "ondemand", "bus", "evcs", "signal", "operator"}
     assert res.metrics["travelers"]["trips"] > 0 and res.metrics["outcomes"]["vmt_miles"] > 0
 

@@ -9,7 +9,7 @@ configured independently.
 Quick start::
 
     from agmsim import Simulation
-    result = Simulation("demo_3x3").run()
+    result = Simulation("montreal").run()
     print(result.metrics["travelers"])
 
 Plug in your own agent::

@@ -95,7 +95,7 @@ def measure(preset: str, prompts: list, concurrency: int, keep_alive: bool = Tru
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--llm", nargs="+", default=["qwen-local"], choices=[p for p in LLM_PRESETS if p != "mock"])
-    parser.add_argument("--scenario", default="city_multimodal")
+    parser.add_argument("--scenario", default="montreal")
     parser.add_argument("--n", type=int, default=32, help="decision points per setting")
     parser.add_argument("--concurrency", type=int, nargs="+", default=None,
                         help="simultaneous calls to try (default: 1 and 8 for a local server; 1, 8 and 32 for a hosted one)")

@@ -1,44 +1,40 @@
 # The testbed: a simplified Montreal on a weekday morning, 07:00 to 09:00.
-# 37 nodes and 76 roads (agmsim/montreal.py): the island, its bridges and tunnel, the South Shore and Laval.
+# 25 nodes and 51 roads (agmsim/montreal.py): the island, its bridges and tunnel, the South Shore and Laval.
 # Everything the simulator has is in it: travellers, their cars, on-demand cars, transit lines, traffic
 # lights in the inner city, charging stations, an orchestrator, named places, and one incident.
 #   agmsim run montreal
 #   agmsim run montreal --set agents.vehicle.agency=L0          # change one kind's level, keep the rest
 #   agmsim run montreal --set events=[]                         # the same morning without the incident
 # Node ids (see agmsim/montreal.py): 0 Downtown, 1 McGill, 2 Old Montreal, 3 Quartier Latin, 4 Plateau,
-# 5 Mile End, 6 Cote-des-Neiges, 7 Westmount, 8 Griffintown, 9 Verdun, 10 NDG, 11 Decarie/A-40, 12 Turcot,
-# 13 Dorval (YUL), 14 LaSalle, 15 Saint-Laurent, 16 West Island, 17 Ahuntsic, 18 Villeray, 19 Cremazie,
-# 20 Rosemont, 21 Saint-Michel, 22 Olympic Stadium, 23 Anjou, 24 Mercier-Est, 25 Montreal-Nord,
-# 26 Pointe-aux-Trembles, 27 Centre-Sud, 28 Nuns' Island, 29 Longueuil, 30 Brossard, 31 Saint-Lambert,
-# 32 Boucherville, 33 Kahnawake, 34 Laval (Chomedey), 35 Laval (Pont-Viau), 36 Laval (Duvernay).
+# 5 Cote-des-Neiges, 6 Verdun, 7 Turcot, 8 Decarie/A-40, 9 Dorval (YUL), 10 Saint-Laurent, 11 Ahuntsic,
+# 12 Villeray, 13 Rosemont, 14 Saint-Michel, 15 Olympic Stadium, 16 Anjou, 17 Mercier-Est, 18 Montreal-Nord,
+# 19 Centre-Sud, 20 Longueuil, 21 Saint-Lambert, 22 Brossard, 23 Laval (Chomedey), 24 Laval (Pont-Viau).
 name: montreal
-description: The testbed. A simplified Montreal (37 nodes, 76 roads) on a weekday morning, with every kind of agent.
+description: The testbed. A simplified Montreal (25 nodes, 51 roads) on a weekday morning, with every kind of agent.
 simulation: {time_step_seconds: 2, duration_seconds: 7200, seed: 1, clock_start: "07:00"}
 network: {type: montreal, capacity_scale: 0.02}
 pois:
   - {id: downtown_offices, type: work, node: 0, name: Downtown offices, weight: 8}
   - {id: old_montreal, type: work, node: 2, name: Old Montreal, weight: 2}
-  - {id: griffintown, type: work, node: 8, name: Griffintown, weight: 1.5}
-  - {id: technoparc, type: work, node: 15, name: Technoparc Saint-Laurent, weight: 3}
-  - {id: anjou_industrial, type: work, node: 23, name: Anjou industrial park, weight: 2}
-  - {id: yul, type: work, node: 13, name: YUL airport, weight: 2}
-  - {id: laval_centre, type: work, node: 34, name: Laval centre, weight: 2}
-  - {id: longueuil_centre, type: work, node: 29, name: Longueuil centre, weight: 1.5}
+  - {id: technoparc, type: work, node: 10, name: Technoparc Saint-Laurent, weight: 3}
+  - {id: anjou_industrial, type: work, node: 16, name: Anjou industrial park, weight: 2}
+  - {id: yul, type: work, node: 9, name: YUL airport, weight: 2}
+  - {id: laval_centre, type: work, node: 23, name: Laval centre, weight: 2}
+  - {id: longueuil_centre, type: work, node: 20, name: Longueuil centre, weight: 1.5}
   - {id: mcgill, type: school, node: 1, name: McGill University, weight: 3}
-  - {id: udem, type: school, node: 6, name: Universite de Montreal, weight: 3}
+  - {id: udem, type: school, node: 5, name: Universite de Montreal, weight: 3}
   - {id: uqam, type: school, node: 3, name: UQAM, weight: 2}
   - {id: chum, type: medical, node: 3, name: CHUM, weight: 2}
-  - {id: muhc, type: medical, node: 10, name: MUHC Glen site, weight: 2}
-  - {id: hmr, type: medical, node: 22, name: Maisonneuve-Rosemont hospital, weight: 1}
+  - {id: muhc, type: medical, node: 7, name: MUHC Glen site, weight: 2}
+  - {id: hmr, type: medical, node: 15, name: Maisonneuve-Rosemont hospital, weight: 1}
   - {id: sainte_catherine, type: shop, node: 0, name: Sainte-Catherine Street, weight: 3}
-  - {id: jean_talon_market, type: shop, node: 18, name: Jean-Talon Market, weight: 2}
-  - {id: fairview, type: shop, node: 16, name: Fairview Pointe-Claire, weight: 2}
-  - {id: carrefour_laval, type: shop, node: 34, name: Carrefour Laval, weight: 2}
-  - {id: dix30, type: shop, node: 30, name: Quartier DIX30, weight: 2}
+  - {id: jean_talon_market, type: shop, node: 12, name: Jean-Talon Market, weight: 2}
+  - {id: carrefour_laval, type: shop, node: 23, name: Carrefour Laval, weight: 2}
+  - {id: dix30, type: shop, node: 22, name: Quartier DIX30, weight: 2}
   - {id: bell_centre, type: leisure, node: 0, name: Bell Centre, weight: 2}
-  - {id: olympic_park, type: leisure, node: 22, name: Olympic Park, weight: 2}
+  - {id: olympic_park, type: leisure, node: 15, name: Olympic Park, weight: 2}
   - {id: old_port, type: leisure, node: 2, name: Old Port, weight: 2}
-  - {id: mount_royal, type: leisure, node: 5, name: Mount Royal, weight: 1.5}
+  - {id: mount_royal, type: leisure, node: 4, name: Mount Royal, weight: 1.5}
 demand:
   pattern: hotspots
   end_seconds: 4500
@@ -49,42 +45,41 @@ demand:
     peak_seconds: 2400
     peak_width_seconds: 1500
     # where people live, roughly by population
-    origins: {16: 8, 13: 3, 14: 5, 9: 4, 10: 5, 6: 5, 7: 2, 15: 5, 17: 6, 18: 6, 19: 3, 20: 7, 21: 5, 22: 6, 23: 4,
-              24: 5, 25: 5, 26: 5, 4: 6, 5: 4, 27: 3, 8: 2, 28: 1, 0: 2, 1: 1, 2: 1, 3: 2, 29: 9, 30: 7, 31: 3,
-              32: 4, 33: 2, 34: 9, 35: 6, 36: 5, 11: 2}
+    origins: {9: 6, 6: 7, 7: 4, 5: 6, 10: 6, 11: 6, 12: 7, 13: 7, 14: 5, 15: 6, 16: 5, 17: 6, 18: 6, 4: 7, 19: 3,
+              0: 2, 1: 1, 2: 1, 3: 2, 8: 3, 20: 10, 21: 3, 22: 8, 23: 10, 24: 8}
 events:
   - {type: link_condition, label: crash on the Decarie expressway, at_seconds: 1800, until_seconds: 4200,
-     links: [[11, 10], [10, 12]], factor: 0.3}
+     links: [[8, 7]], factor: 0.3}
 agents:
-  traveler: {count: 900, car_ownership: 0.65, default_mode: car, non_llm_policy: utility, agency: L4,
+  traveler: {count: 600, car_ownership: 0.65, default_mode: car, non_llm_policy: utility, agency: L4,
              wait_check_seconds: 180}
   vehicle:
     non_llm_policy: algorithm
     agency: L1
     policy_params: {top_up_below_pct: 20}
     battery: {capacity_kwh: 60, consumption_kwh_per_km: 0.18, initial_soc_min: 0.04, initial_soc_max: 0.8, target_soc: 0.4}
-  ondemand: {fleet: 60, non_llm_policy: algorithm, agency: L1, depots: [0, 3, 18, 13, 22, 29, 34]}
+  ondemand: {fleet: 40, non_llm_policy: algorithm, agency: L1, depots: [0, 3, 12, 9, 15, 20, 23]}
   bus:                                  # transit lines on their own right of way (metro and REM, drawn as loops)
     non_llm_policy: algorithm
     agency: L1
     max_access_m: 1500
     lines:
-      - {id: Orange, stops: [0, 3, 4, 18, 19, 17, 35, 34, 11, 6, 10, 7], buses: 10, capacity: 120}
-      - {id: Green, stops: [14, 9, 8, 0, 1, 3, 27, 22, 24], buses: 8, capacity: 120}
-      - {id: South, stops: [0, 28, 30, 31, 29, 27, 3], buses: 6, capacity: 120}
-      - {id: West, stops: [0, 6, 11, 15, 16, 13, 12], buses: 6, capacity: 120}
+      - {id: Orange, stops: [0, 3, 4, 12, 11, 24, 23, 8, 5], buses: 8, capacity: 120}
+      - {id: Green, stops: [6, 0, 1, 3, 19, 15, 17], buses: 6, capacity: 120}
+      - {id: South, stops: [0, 6, 22, 21, 20, 19, 3], buses: 6, capacity: 120}
+      - {id: West, stops: [0, 5, 8, 10, 9, 7], buses: 5, capacity: 120}
   evcs:
     non_llm_policy: algorithm
     agency: L1
     stations:
-      - {id: Downtown, node: 0, chargers: 4, power_kw: 100}
-      - {id: Decarie, node: 11, chargers: 4, power_kw: 100}
-      - {id: Anjou, node: 23, chargers: 4, power_kw: 100}
-      - {id: Rosemont, node: 20, chargers: 3, power_kw: 100}
-      - {id: Dorval, node: 13, chargers: 3, power_kw: 100}
-      - {id: Brossard, node: 30, chargers: 3, power_kw: 100}
-      - {id: Laval, node: 34, chargers: 3, power_kw: 100}
-  signal: {junctions: [0, 1, 2, 3, 4, 5, 6, 7, 8, 18, 20, 22, 27], non_llm_policy: algorithm, agency: L1, green_seconds: 40}
+      - {id: Downtown, node: 0, chargers: 3, power_kw: 100}
+      - {id: Decarie, node: 8, chargers: 3, power_kw: 100}
+      - {id: Anjou, node: 16, chargers: 3, power_kw: 100}
+      - {id: Rosemont, node: 13, chargers: 2, power_kw: 100}
+      - {id: Dorval, node: 9, chargers: 2, power_kw: 100}
+      - {id: Brossard, node: 22, chargers: 2, power_kw: 100}
+      - {id: Laval, node: 23, chargers: 2, power_kw: 100}
+  signal: {junctions: [0, 1, 2, 3, 4, 5, 12, 13, 15, 19], non_llm_policy: algorithm, agency: L1, green_seconds: 40}
   operator: {enabled: true, non_llm_policy: algorithm, agency: L1, review_seconds: 300, cordon_center: 0,
              cordon_radius_m: 2000, initial_bus_priority: true}
 record: {dir: runs, frames_every_seconds: 10}

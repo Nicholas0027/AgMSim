@@ -21,12 +21,12 @@ This is an early prototype. See [Limitations](#limitations).
 ## The testbed: a simplified Montreal
 
 Experiments are run on one network, in the way much of transport research uses Sioux Falls: `montreal`, a
-simplified Montreal of 37 nodes and 76 two-way roads (`agmsim/montreal.py`). It keeps what shapes traffic in
-the city: an island reached over nine bridges and one tunnel, a centre on its south side, the ring of
+simplified Montreal of 25 nodes and 51 two-way roads (`agmsim/montreal.py`), about 21 km by 17 km. It keeps
+what shapes traffic in the city: an island reached over seven bridges and one tunnel, a centre on its south side, the ring of
 expressways (A-40 Metropolitan, A-15 Decarie, Ville-Marie, A-25, A-20) and the arterials between them, with
 the South Shore and Laval at the far ends of the crossings. The scenario is a weekday morning, 07:00 to
-09:00, with every kind of agent the simulator has: 900 travellers who live where people live and go to named
-places (downtown offices, McGill, the airport, hospitals, markets), their cars, 60 on-demand cars, four
+09:00, with every kind of agent the simulator has: 600 travellers who live where people live and go to named
+places (downtown offices, McGill, the airport, hospitals, markets), their cars, 40 on-demand cars, four
 transit lines on their own right of way, traffic lights in the inner city, seven charging stations, an
 orchestrator, and a crash on the Decarie expressway at 07:30.
 
@@ -36,8 +36,8 @@ agmsim run montreal --set agents.vehicle.agency=L0    # change one kind's level,
 ```
 
 Positions, lengths, speeds and lanes are approximate values by class of road. It is an abstraction to
-experiment on, not a calibrated model of the city. The other packaged scenarios are small examples of single
-features; new experiments go on the testbed.
+experiment on, not a calibrated model of the city. It is the one scenario of the package: an experiment
+changes settings of the testbed, it does not bring a network of its own.
 
 **Try it without installing anything:** <https://nicholas0027.github.io/AgMSim/> is the web interface with
 the simulator running inside your browser. It opens on the testbed (`montreal`); set the decision
@@ -58,7 +58,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 ```bash
-.venv/bin/agmsim run city_multimodal
+.venv/bin/agmsim run montreal
 ```
 
 ```bash
@@ -66,7 +66,7 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 ```
 
 `run` prints outcome metrics and writes `runs/<name>/` (config, trace, metrics). `serve` opens a local web
-interface (http://127.0.0.1:8765) to choose a scenario, pick for each kind of agent who decides (a built-in
+interface (http://127.0.0.1:8765) on the testbed: pick for each kind of agent who decides (a built-in
 model or an LLM) and its agency level, watch the run and inspect any decision. Other commands: `agmsim list`, `agmsim matrix`, `agmsim replay`,
 `agmsim explain`.
 
@@ -201,8 +201,6 @@ model and a remote service behind the same kind are handed the same observation 
 Whether a decision model *uses* its memory is another matter: the vehicle `algorithm` does with
 `policy_params: {settle_min: 10}` (after a change of route it changes again only for a large saving),
 and a language model can be told to read its memory first with `llm_policy_params: {reflect: true}`.
-`agmsim run two_bridges` is built around them: one of two bridges far apart is blocked, and which one to
-take has to be settled before a car can see either.
 
 ## The seven built-in kinds of agent
 
@@ -264,7 +262,7 @@ HF_HUB_OFFLINE=1 .venv/bin/mlx_lm.server --model Qwen/Qwen2.5-7B-Instruct --host
 ```
 
 ```bash
-.venv/bin/agmsim run demo_3x3 --set human_agents.use_llm=true --set llm.preset=deepseek
+.venv/bin/agmsim run montreal --set human_agents.use_llm=true --set llm.preset=deepseek
 ```
 
 API keys are read from the environment, or from a file named `.env` in the project folder
@@ -312,11 +310,11 @@ it), which is why AgMSim relies on recorded decisions.
 ## Experiments
 
 ```bash
-.venv/bin/agmsim matrix city_multimodal --factor agents.vehicle.agency=L0,L1,L2,L3,L4 --seeds 5 --workers 5
+.venv/bin/agmsim matrix montreal --factor agents.vehicle.agency=L0,L1,L2,L3,L4 --seeds 3 --workers 5
 ```
 
 ```bash
-.venv/bin/agmsim matrix demo_3x3 --llm-2x2 --seeds 3 --set llm.backend=mock
+.venv/bin/agmsim matrix montreal --llm-2x2 --seeds 3 --set llm.backend=mock
 ```
 
 Results are means with 95% confidence half-widths over seeds; `--out DIR` writes `runs.csv`.
@@ -356,7 +354,7 @@ events:                                  # (the list is also accepted under its 
 - **A place closing early** ends what people planned to do there at that time; those who may adapt their
   day plan are told and review it.
 
-`agmsim run town_places` has the first three; the `places` experiment runs them one at a time and together.
+The testbed has a road slowed by a crash; the others are added with `--set events=[...]`.
 
 ### Day plans (MATSim's action mechanism, with decisions inside the day)
 
@@ -390,38 +388,31 @@ outcome is worth most by the person's own score, if it gains at least `plan_gain
 model. `plans.review_best_rate` and `plans.review_regret_usd_mean` say how good the chosen edits were
 in the person's own terms; `plans.score_usd_mean` says how the day actually went.
 
-```bash
-.venv/bin/agmsim run evening_plans                 # packaged scenario; also selectable in `agmsim serve`
-.venv/bin/python experiments/suite.py day_plan --seeds 10
-.venv/bin/python experiments/suite.py llm_day_plan --seeds 3 --llm qwen-local deepseek
-```
+The testbed is a morning of single trips; day plans are switched on with `demand.plan`.
 
 Not yet: editing the plan while travelling, forecasts of traffic (projections assume it stays as it is),
 and MATSim's day-to-day loop itself as a reference.
 
-### Designed experiments
+### Experiments on the testbed
 
-`experiments/suite.py` holds a set of experiments that each isolate one kind of agency under conditions
-where it can matter (an incident, a toll, a bottleneck with a bus lane, scarce charging), and reports
-**paired** differences from a baseline arm over common seeds:
+`experiments/suite.py` holds the experiments. Each is a set of arms that change one thing on the testbed
+(`montreal`) and leave everything else as it is; all arms run on the same seeds, and differences from the
+first arm are reported **paired**:
 
 ```bash
-.venv/bin/python experiments/suite.py --seeds 10 --workers 8
+.venv/bin/python experiments/suite.py                         # 3 seeds while developing
+.venv/bin/python experiments/suite.py vehicle_agency --seeds 10
 ```
 
-The `signals` experiment asks whether traffic lights need agency of their own or an orchestrator, on
-`agmsim run city_signals`; the `ondemand` experiment asks what on-demand cars that re-route, turn requests
-down or move while free do to waiting and to the fleet, on `agmsim run city_ondemand`; the `places`
-experiment asks whether rain, a match ending and a blocked road add up, on `agmsim run town_places`; the
-`knowledge` and `knowledge_near` experiments ask what a car's sight, its memory and what other cars tell
-it are each worth, on `agmsim run two_bridges`; `vehicle_agency` changes nothing but the level of the
-private cars, from L0 to L4, on the testbed (`agmsim run montreal`); `decision_memory` asks whether a car that keeps no road in
-mind is helped by recalling its own decisions (and `llm_decision_memory` whether a language model makes
-that use of them; `experiments/insitu_memory.py` puts the same decision points to a model one at a time,
-which costs far less, and `experiments/insitu_identity.py` checks whether telling a car which route is which
-changes decisions it has nothing to do with). Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
-(`llm_alignment`, `llm_persuasion`) need a language model: `--llm qwen-local` (default), `--llm deepseek`,
-or both to compare them as arms; `--answer choice explain reason` adds the answer formats as arms.
+`vehicle_agency` changes nothing but the level of the private cars, from L0 to L4; `vehicle_agency_alone`
+does the same with every other agent passive. Results: `docs/EXPERIMENTS_zh.md` (in Chinese). An arm whose
+label contains `{llm}` runs on a language model: `--llm qwen-local` (default), `--llm deepseek`, or both to
+compare them as arms; `--answer choice explain reason` adds the answer formats as arms.
+
+Earlier experiments were each run on a scenario of their own (an incident, a toll, a bottleneck with a bus
+lane, scarce charging, traffic lights, on-demand cars, places and events, day plans, two bridges). Those
+scenarios are no longer part of the package; they and their results are in the repository's history under
+the tag `before-single-testbed`, and the write-up is `docs/archive/EXPERIMENTS_before_testbed_zh.md`.
 
 ### Decision benchmark
 
