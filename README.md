@@ -394,7 +394,8 @@ experiment asks whether rain, a match ending and a blocked road add up, on `agms
 it are each worth, on `agmsim run two_bridges`; `decision_memory` asks whether a car that keeps no road in
 mind is helped by recalling its own decisions (and `llm_decision_memory` whether a language model makes
 that use of them; `experiments/insitu_memory.py` puts the same decision points to a model one at a time,
-which costs far less). Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
+which costs far less, and `experiments/insitu_identity.py` checks that naming the junctions of each route
+does not change decisions it has nothing to do with). Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
 (`llm_alignment`, `llm_persuasion`) need a language model: `--llm qwen-local` (default), `--llm deepseek`,
 or both to compare them as arms; `--answer choice explain reason` adds the answer formats as arms.
 

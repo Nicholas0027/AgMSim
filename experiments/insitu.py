@@ -37,13 +37,14 @@ class RoutePointsOfARun(RouteDelegation):
     name = "route_points_of_a_run"
     config = Simulation(SCENARIO, overrides=BASE).cfg.to_dict()
 
-    def __init__(self, seeds):
+    def __init__(self, seeds, overrides=None):
         self.seeds = list(seeds)
+        self.overrides = dict(overrides or {})      # on top of the scenario, for the runs the points are taken from
 
     def items(self):
         out = []
         for seed in self.seeds:
-            result = Simulation(SCENARIO, overrides={**BASE, "simulation.seed": seed}).run()
+            result = Simulation(SCENARIO, overrides={**BASE, **self.overrides, "simulation.seed": seed}).run()
             for n, rec in enumerate(result.records):
                 if not (rec.get("type") == "decision" and rec["kind"] == "vehicle" and rec["trigger"] == "route"
                         and "obs" in rec and "owner" in rec["obs"]["state"]):
