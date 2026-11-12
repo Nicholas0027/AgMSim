@@ -23,7 +23,8 @@ from ..actions import Decision, Param
 from ..agency import AgencySpec
 from ..entities import TState, Vehicle, VState
 from ..observation import clock, km, minutes
-from .base import Kind, advance, known_eta, known_path, path_to, register_kind, route_memory, update_flows
+from .base import (Kind, advance, known_eta, known_path, name_routes, path_to, register_kind, route_memory,
+                   update_flows)
 
 OBJECTIVE_FAST = "Bring your owner to the destination as quickly as possible."
 SURPRISE_SECONDS = 300.0     # a route found to take this much longer than reckoned when it was chosen is an outcome
@@ -287,6 +288,8 @@ class VehicleKind(Kind):
         rows = [{"route": i, "eta_min": minutes(lead_cur + r.time), "km": km(r.length),
                  "toll_usd": 0.0 if v.toll_paid else w.route_toll(r.links), "is_current_route": i == 0}
                 for i, r in enumerate(routes)]
+        if cfg.observation.route_roads:
+            name_routes(w.net, rows, routes, anchor)
         context = {"routes": rows}
         basis = self.sim.traffic.explain(self.name, v, routes, seen, reports)
         if basis:                                # what the estimates rest on, where the vehicle does not see for itself

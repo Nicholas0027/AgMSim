@@ -1266,3 +1266,34 @@ def test_a_language_model_can_be_told_to_read_its_memory_first():
     agent = next(iter(plain.world.vehicles))
     assert REFLECT not in plain.policies[agent].system and told.policies[agent].system.endswith(REFLECT)
     plain.close(), told.close()
+
+
+def test_routes_can_be_shown_and_remembered_by_the_junctions_they_pass():
+    """A route's number changes from one look to the next (route 0 is the route the car is on); the junctions
+    it passes do not, so a car can tell later whether an offered route is one it left."""
+    on = "agents.vehicle.observation.route_roads=true"
+    sim, res = run(SCENARIOS / "crossing.yaml", [on])
+    net = sim.world.net
+    shown = [r["obs"] for r in res.records if r.get("type") == "decision" and r["kind"] == "vehicle" and "obs" in r]
+    for o in shown[:40]:
+        start = o["state"]["location"].get("next_node", o["state"]["location"].get("node"))
+        for row in o["context"]["routes"]:
+            via = row["via_nodes"]
+            assert via[0] == start and via[-1] == o["state"]["destination_node"]
+            assert all(net.link_between(a, b) is not None for a, b in zip(via, via[1:]))     # a path along roads
+            assert abs(sum(net.link_between(a, b).length for a, b in zip(via, via[1:])) / 1000 - row["km"]) < 0.4
+    changed = next(item for o in shown for item in o.get("memory", ()) if item.get("did") == "changed route")
+    assert changed["left_route"]["via_nodes"] != changed["took_route"]["via_nodes"]
+    # a car that goes back is offered the very road it left: the blocked bridge 3 -> 20 is in both
+    back = next(o for o in shown if o.get("memory") and o["memory"][-1].get("did") == "changed route"
+                and [3, 20] in [o["memory"][-1]["left_route"]["via_nodes"][i:i + 2] for i in range(8)]
+                and any([3, 20] in [row["via_nodes"][i:i + 2] for i in range(len(row["via_nodes"]))]
+                        for row in o["context"]["routes"][1:]))
+    assert back["context"]["routes"][0]["is_current_route"]
+    # off by default, and the run itself is the same either way
+    _, plain = run(SCENARIOS / "crossing.yaml")
+    assert plain.state_digest == res.state_digest
+    assert not any("via_nodes" in row for r in plain.records if r.get("type") == "decision" and r["kind"] == "vehicle"
+                   and "obs" in r for row in r["obs"]["context"]["routes"])
+    with pytest.raises(ConfigError, match="find their own way"):
+        Config.load("city_multimodal", ["agents.bus.observation.route_roads=true"])

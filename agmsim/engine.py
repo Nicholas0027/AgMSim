@@ -332,6 +332,8 @@ class Simulation:
             out["memory"]["reasons"] = True
         if self.kinds[name].drives:
             out["observation"] = {"traffic": kcfg.observation.traffic}
+            if kcfg.observation.route_roads:
+                out["observation"]["route_roads"] = True
             if kcfg.observation.traffic == "local":
                 out["observation"]["radius_m"] = kcfg.observation.radius_m
             out["memory"]["traffic_seconds"] = kcfg.memory.traffic_seconds

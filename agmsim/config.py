@@ -80,6 +80,7 @@ class ObservationCfg:
 
     traffic: str = "global"             # road conditions it knows as they are now: none | local | global
     radius_m: float = 800.0             # 'local': roads within this distance of where it is
+    route_roads: bool = False           # each route it is offered also names the junctions it passes: which route it is
 
 
 @dataclass
@@ -435,11 +436,12 @@ class Config:
                 raise ConfigError(f"{path}.observation.radius_m and {path}.interaction.range_m must be positive")
             if int(k.memory.decisions) < 0 or k.memory.traffic_seconds < 0:
                 raise ConfigError(f"{path}.memory.decisions and {path}.memory.traffic_seconds must not be negative")
-            if kind not in DRIVING_KINDS and (k.observation.traffic != "global" or k.memory.traffic_seconds > 0
-                                              or k.interaction.share_traffic):
+            if kind not in DRIVING_KINDS and (k.observation.traffic != "global" or k.observation.route_roads
+                                              or k.memory.traffic_seconds > 0 or k.interaction.share_traffic):
                 raise ConfigError(
-                    f"{path}: observation.traffic, memory.traffic_seconds and interaction.share_traffic are settings "
-                    f"of the kinds that find their own way through traffic ({', '.join(DRIVING_KINDS)})")
+                    f"{path}: observation.traffic, observation.route_roads, memory.traffic_seconds and "
+                    f"interaction.share_traffic are settings of the kinds that find their own way through traffic "
+                    f"({', '.join(DRIVING_KINDS)})")
         for item in self.interventions:
             if not isinstance(item, dict) or item.get("type") not in EVENT_TYPES:
                 raise ConfigError(f"each external event needs a 'type' out of {list(EVENT_TYPES)}")

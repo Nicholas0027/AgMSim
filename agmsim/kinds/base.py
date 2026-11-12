@@ -217,7 +217,10 @@ def route_memory(rec) -> dict:
     chosen = rows[rec.decision.args["route"]]
 
     def what(row):
-        return {"eta_min": row["eta_min"], "km": row["km"]}
+        out = {"eta_min": row["eta_min"], "km": row["km"]}
+        if "via_nodes" in row:              # which route it was: without this a later look cannot tell routes apart
+            out["via_nodes"] = row["via_nodes"]
+        return out
 
     if chosen["route"] != 0:
         return {"trigger": rec.trigger, "did": "changed route", "left_route": what(rows[0]), "took_route": what(chosen)}
@@ -225,6 +228,12 @@ def route_memory(rec) -> dict:
     if len(rows) > 1:
         item["quickest_other_route"] = what(min(rows[1:], key=lambda row: (row["eta_min"], row["route"])))
     return item
+
+
+def name_routes(net, rows: list, routes: list, start: int) -> None:
+    """Give every listed route the junctions it passes, from ``start`` on: what makes it the route it is."""
+    for row, route in zip(rows, routes):
+        row["via_nodes"] = [start] + [net.links[lid].v for lid in route.links]
 
 
 def known_path(sim, kind, m, node: int) -> list[int]:

@@ -24,7 +24,8 @@ from ..agency import AgencySpec
 from ..entities import Cab, CState, RideRequest, TState
 from ..network import current_weight
 from ..observation import OBJECTIVES, km, minutes
-from .base import Kind, advance, known_eta, known_path, path_to, register_kind, route_memory, update_flows
+from .base import (Kind, advance, known_eta, known_path, name_routes, path_to, register_kind, route_memory,
+                   update_flows)
 
 FREE = (CState.IDLE, CState.REPOSITIONING)
 
@@ -241,6 +242,8 @@ class OnDemandKind(Kind):
                 return None
             rows = [{"route": i, "eta_min": minutes(lead + r.time), "km": km(r.length), "is_current_route": i == 0}
                     for i, r in enumerate(routes)]
+            if cfg.observation.route_roads:
+                name_routes(w.net, rows, routes, anchor)
             context = {"routes": rows}
             basis = self.sim.traffic.explain(self.name, cab, routes, seen, reports)
             if basis:

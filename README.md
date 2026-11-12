@@ -143,13 +143,15 @@ go on when it decides:
 agents:
   vehicle:
     agency: L1
-    observation: {traffic: local, radius_m: 900}      # none | local | global
+    observation: {traffic: local, radius_m: 900, route_roads: false}      # traffic: none | local | global
     memory: {decisions: 4, reasons: false, traffic_seconds: 600}
     interaction: {share_traffic: true, range_m: 500}
 ```
 
 - **Observation** — what it perceives now. `traffic` is how much of current road conditions a car sees
-  for itself: nothing, the roads within `radius_m`, or every road.
+  for itself: nothing, the roads within `radius_m`, or every road. With `route_roads` every route it is
+  offered names the junctions it passes, so that a route can be recognised from one decision to the next
+  (a route's number cannot: route 0 is always the route the car is on).
 - **Memory** — what it carries from the past. `decisions` is how many of its own latest decisions and
   outcomes it is shown at every decision point, and with `reasons` each decision comes with the reason
   its decision model gave at the time (these two apply to every kind); `traffic_seconds` is how long a
@@ -391,7 +393,8 @@ experiment asks whether rain, a match ending and a blocked road add up, on `agms
 `knowledge` and `knowledge_near` experiments ask what a car's sight, its memory and what other cars tell
 it are each worth, on `agmsim run two_bridges`; `decision_memory` asks whether a car that keeps no road in
 mind is helped by recalling its own decisions (and `llm_decision_memory` whether a language model makes
-that use of them). Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
+that use of them; `experiments/insitu_memory.py` puts the same decision points to a model one at a time,
+which costs far less). Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
 (`llm_alignment`, `llm_persuasion`) need a language model: `--llm qwen-local` (default), `--llm deepseek`,
 or both to compare them as arms; `--answer choice explain reason` adds the answer formats as arms.
 
@@ -465,8 +468,9 @@ def toll_averse(obs):                       # obs.trigger, obs.state, obs.contex
 - The built-in non-LLM policies are simple heuristics with assumed parameters, not calibrated models.
 - Of the agency mechanisms, sight, memory for roads and car-to-car reports exist for cars only; reports
   are always truthful and taken at face value; there are no free-text messages between agents. Recalling
-  its own decisions helps a car when a built-in rule uses them; the language models tried so far did not
-  make that use of them (`docs/EXPERIMENTS_zh.md`, section 12).
+  its own decisions helps a car when a built-in rule uses them; the language models tried used them only
+  when the memory said what came of a decision and routes could be told apart, and then only after being
+  caught out once (`docs/EXPERIMENTS_zh.md`, section 12).
 - The operator's action set is small. No validation against real-world data has been done.
 
 Tests: `.venv/bin/python -m pytest`. Experiments and measured results (in Chinese): `docs/EXPERIMENTS_zh.md`.
