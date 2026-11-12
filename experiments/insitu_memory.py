@@ -14,7 +14,9 @@ it sees it, and returns to it once it is out of sight. Its decision points are o
 
 The points are taken from runs driven by the algorithm (so they cost nothing to produce and are the same
 for every model) and are asked without a run around them. The memory a car had at that point is part of
-its observation; ``--no-memory`` takes it out, ``--no-roads`` leaves out the junctions each route passes.
+its observation; ``--no-memory`` takes it out. ``--identity`` says by what a route can be recognised from
+one decision to the next: the junctions it passes (``junctions``, the default), the name of its way
+(``names``), or nothing (``none``, also ``--no-roads``).
 
 The table goes to ``experiments/results/insitu_memory__<presets>.md``.
 """
@@ -34,13 +36,34 @@ from suite import ANSWERS, LLM_NAMES
 HERE = Path(__file__).parent
 SCENARIO = str(HERE / "scenarios" / "crossing.yaml")
 JAMMED_MIN = 15.0          # a route reckoned this long is one over the blocked bridge, seen
+ROUTE_KEYS = ("left_route", "took_route", "route", "quickest_other_route")      # routes named in a memory entry
+IDENTITY = {"agents.vehicle.observation.route_roads": True, "agents.vehicle.observation.route_names": True}
+SHOWN = {"junctions": "routes with the junctions they pass", "names": "routes with the name of their way",
+         "none": "no route identity", "reordered": "no route identity, the fields of each route in another order"}
 
 
-def points(seeds, roads: bool) -> list:
+def as_shown(obs: dict, identity: str) -> dict:
+    """An observation taken with junctions and names, as a car with only one of them (or neither) is shown it."""
+    obs = json.loads(json.dumps(obs))
+    drop = {"junctions": ("name",), "names": ("via_nodes",)}.get(identity, ("name", "via_nodes"))
+    rows = list(obs["context"].get("routes", ()))
+    rows += [entry[key] for entry in obs.get("memory", ()) for key in ROUTE_KEYS if isinstance(entry.get(key), dict)]
+    for row in rows:
+        for key in drop:
+            row.pop(key, None)
+    if "name" in drop:
+        obs["context"].pop("route_names", None)
+    if identity == "reordered":             # the same content, written differently: what any change of wording does
+        obs["context"]["routes"] = [{"route": row["route"], **{key: row[key] for key in reversed(list(row)) if key != "route"}}
+                                    for row in obs["context"]["routes"]]
+    return obs
+
+
+def points(seeds, identity: str = "junctions") -> list:
     """Decision points of the cars in algorithm-driven runs, each with its kind and what is right there."""
     out = []
     for seed in seeds:
-        sim = Simulation(SCENARIO, {"simulation.seed": seed, "agents.vehicle.observation.route_roads": True})
+        sim = Simulation(SCENARIO, {"simulation.seed": seed, **IDENTITY})
         event = next(e for e in sim.cfg.interventions if e["type"] == "link_condition")
         blocked = {tuple(pair) for u, v in event["links"] for pair in ((u, v), (v, u))}
         clock0 = sim.world.clock0
@@ -61,15 +84,8 @@ def points(seeds, roads: bool) -> list:
                 kind, right = ("return, burned" if burned else "return, first"), [r["route"] for r in routes if not over[r["route"]]]
             else:
                 continue
-            if not roads:               # the same point as a car without route identity is shown it
-                obs = json.loads(json.dumps(obs))
-                for row in obs["context"]["routes"]:
-                    row.pop("via_nodes", None)
-                for item in obs.get("memory", ()):
-                    for key in ("left_route", "took_route", "route", "quickest_other_route"):
-                        if isinstance(item.get(key), dict):
-                            item[key].pop("via_nodes", None)
-            out.append({"id": f"seed{seed}-{n}", "kind": kind, "obs": obs, "right": right, "agent": rec["agent"]})
+            out.append({"id": f"seed{seed}-{n}", "kind": kind, "obs": as_shown(obs, identity), "right": right,
+                        "agent": rec["agent"]})
     return out
 
 
@@ -99,17 +115,20 @@ def main() -> None:
     parser.add_argument("--seeds", type=int, default=1)
     parser.add_argument("--reflect", action="store_true", help="tell the model to read its memory first")
     parser.add_argument("--no-memory", action="store_true", help="take the car's memory out of what it is shown")
-    parser.add_argument("--no-roads", action="store_true", help="leave out the junctions each route passes")
+    parser.add_argument("--identity", default="junctions", choices=["junctions", "names", "none"],
+                        help="by what a route can be recognised at a later decision")
+    parser.add_argument("--no-roads", action="store_true", help="the same as --identity none")
     parser.add_argument("--leave", type=int, default=40, help="how many 'leave' points to ask (all 'return' points are asked)")
     parser.add_argument("--workers", type=int, default=8)
     args = parser.parse_args()
 
-    items = points(range(1, args.seeds + 1), roads=not args.no_roads)
+    identity = "none" if args.no_roads else args.identity
+    items = points(range(1, args.seeds + 1), identity)
     leave = [it for it in items if it["kind"] == "leave"]
     step = max(1, len(leave) // max(1, args.leave))
     items = [it for it in items if it["kind"] != "leave"] + leave[::step][:args.leave]
     kinds = ["leave", "return, first", "return, burned"]
-    shown = ("no memory" if args.no_memory else "memory") + (", no route identity" if args.no_roads else ", routes named by their junctions") \
+    shown = ("no memory" if args.no_memory else "memory") + ", " + SHOWN[identity] \
         + (", told to read its memory first" if args.reflect else "")
     counts = ", ".join(str(sum(it["kind"] == k for it in items)) + " " + k for k in kinds)
     lines = [f"### insitu_memory\n\nWhat the car is shown: {shown}. Answer format: {args.answer}. "
@@ -134,7 +153,7 @@ def main() -> None:
         print(lines[-1], f"({time.time() - started:.0f} s)", flush=True)
     text = "\n".join(lines) + "\n"
     stem = "insitu_memory__" + "+".join(args.llm) + ("__reflect" if args.reflect else "") \
-        + ("__nomemory" if args.no_memory else "") + ("__noroads" if args.no_roads else "")
+        + ("__nomemory" if args.no_memory else "") + {"junctions": "", "names": "__names", "none": "__noroads"}[identity]
     out = HERE / "results"
     out.mkdir(exist_ok=True)
     (out / f"{stem}.md").write_text(text, encoding="utf-8")

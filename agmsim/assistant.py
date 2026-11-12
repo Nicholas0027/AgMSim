@@ -41,7 +41,8 @@ agents.<kind>.memory.decisions (integer, 0 for none): how many of its own latest
 agents.<kind>.memory.reasons (true | false): whether each remembered decision comes with the reason given for it at the time
 agents.<vehicle or ondemand>.observation.traffic (none | local | global): how much of current traffic a car of that kind sees for itself; local means the roads within observation.radius_m
 agents.<vehicle or ondemand>.observation.radius_m (metres): how far a car with local observation sees
-agents.<vehicle or ondemand>.observation.route_roads (true | false): whether each route a car is offered also names the junctions it passes
+agents.<vehicle or ondemand>.observation.route_names (true | false): whether each route a car is offered has a name that stays the same from one decision to the next, so that the car can recognise a route it remembers
+agents.<vehicle or ondemand>.observation.route_roads (true | false): whether each route a car is offered also lists the junctions it passes
 agents.<vehicle or ondemand>.memory.traffic_seconds (seconds, 0 for none): how long a car remembers a slow road it saw or was told about
 agents.<vehicle or ondemand>.interaction.share_traffic (true | false): cars within interaction.range_m of each other tell each other about slow roads
 agents.<vehicle or ondemand>.interaction.range_m (metres): how far that reaches

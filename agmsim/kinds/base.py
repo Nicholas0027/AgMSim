@@ -216,9 +216,10 @@ def route_memory(rec) -> dict:
     rows = rec.obs.context["routes"]
     chosen = rows[rec.decision.args["route"]]
 
-    def what(row):
-        out = {"eta_min": row["eta_min"], "km": row["km"]}
-        if "via_nodes" in row:              # which route it was: without this a later look cannot tell routes apart
+    def what(row):                          # with which route it was: without that a later look cannot tell routes apart
+        out = {"name": row["name"]} if "name" in row else {}
+        out.update(eta_min=row["eta_min"], km=row["km"])
+        if "via_nodes" in row:
             out["via_nodes"] = row["via_nodes"]
         return out
 
@@ -234,6 +235,19 @@ def name_routes(net, rows: list, routes: list, start: int) -> None:
     """Give every listed route the junctions it passes, from ``start`` on: what makes it the route it is."""
     for row, route in zip(rows, routes):
         row["via_nodes"] = [start] + [net.links[lid].v for lid in route.links]
+
+
+#: Shown with routes that have names: what a name is.
+ROUTE_NAMES = ("a name stands for one way to your destination: routes that share a name are variants of it. "
+               "A name means the same at every decision and in your memory; a route's number does not")
+
+
+def label_routes(sim, agent_id: str, rows: list, routes: list, destination: int, context: dict) -> None:
+    """Give every listed route the name of its way: what a route can be recognised by at a later decision."""
+    for row, name in zip(rows, sim.route_names.give(agent_id, routes, destination)):
+        rest = {key: row.pop(key) for key in list(row) if key != "route"}
+        row.update(name=name, **rest)
+    context["route_names"] = ROUTE_NAMES
 
 
 def known_path(sim, kind, m, node: int) -> list[int]:

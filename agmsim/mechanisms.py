@@ -6,7 +6,9 @@ kind next to the level, say what it has to go on:
 ``observation``
     what it perceives of the current state. Here: how much of the road
     conditions it knows as they are now -- ``traffic: none | local | global``,
-    with ``radius_m`` for ``local``.
+    with ``radius_m`` for ``local``. And how it can tell the routes it is
+    offered apart from one decision to the next: by a name each way keeps
+    (``route_names``), or by the junctions each route passes (``route_roads``).
 ``memory``
     what it carries from the past: its own latest decisions and what came of
     them (``decisions``; with ``reasons`` also why it took each, in its
@@ -51,6 +53,61 @@ SLOW = 0.8              # a road is worth a report below this share of its norma
 PERIOD_SECONDS = 10.0   # how often agents take note of the roads around them and exchange reports
 MAX_REPORTS_SHOWN = 6
 MAX_REASON_CHARS = 280  # of the reason an agent gave for a decision, as kept in its memory
+SAME_WAY = 0.5          # a route with at least this share of its length on the roads of a way has that way's name
+
+
+def _letters(n: int) -> str:
+    """A, B, ..., Z, AA, AB, ...: the n-th name (from 0)."""
+    out, n = "", n + 1
+    while n:
+        n, r = divmod(n - 1, 26)
+        out = chr(65 + r) + out
+    return out
+
+
+class RouteNames:
+    """A name for each way a driving agent has been offered, the same from one decision to the next.
+
+    The routes listed at a decision point are numbered afresh every time (route 0 is the one the agent is
+    on), so a number does not say which route it was. A name does. A *way* is the roads of the routes
+    that have had its name. A route is given the name of the way it follows most closely, if at least
+    ``SAME_WAY`` of its length lies on that way's roads, and a new name otherwise; its own roads then
+    belong to the way. So routes that differ by a short stretch share a name, the same route has the
+    same name whenever it is offered again, and the route the agent is on keeps the name it chose for
+    as long as that fits. Ways lead to one destination: with a new destination the agent starts
+    afresh, with names it has not used before.
+    """
+
+    def __init__(self, sim):
+        self.world = sim.world
+        self._ways: dict[str, tuple] = {}       # agent -> (destination, {name: the roads of that way})
+        self._on: dict[str, str] = {}           # agent -> the name of the way it chose last
+        self._given: dict[str, int] = {}        # agent -> how many names it has been given
+
+    def give(self, agent_id: str, routes, destination: int) -> list:
+        """The names of the routes offered now, in their order (``routes[0]`` is the one the agent is on)."""
+        links = self.world.net.links
+        if self._ways.get(agent_id, (None,))[0] != destination:
+            self._ways[agent_id] = (destination, {})
+        ways = self._ways[agent_id][1]
+        names = []
+        for i, route in enumerate(routes):
+            total = sum(links[lid].length for lid in route.links) or 1.0
+            fit = {name: sum(links[lid].length for lid in route.links if lid in roads) / total
+                   for name, roads in ways.items()}
+            name = self._on.get(agent_id) if i == 0 else None
+            if fit.get(name, 0.0) < SAME_WAY:
+                name = max(fit, key=fit.get, default=None)          # of equals, the older name
+                if name is None or fit[name] < SAME_WAY:
+                    name = _letters(self._given.get(agent_id, 0))
+                    self._given[agent_id] = self._given.get(agent_id, 0) + 1
+                    ways[name] = set()
+            ways[name].update(route.links)
+            names.append(name)
+        return names
+
+    def chose(self, agent_id: str, name: str) -> None:
+        self._on[agent_id] = name
 
 
 class Memories:

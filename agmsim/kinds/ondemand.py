@@ -24,7 +24,7 @@ from ..agency import AgencySpec
 from ..entities import Cab, CState, RideRequest, TState
 from ..network import current_weight
 from ..observation import OBJECTIVES, km, minutes
-from .base import (Kind, advance, known_eta, known_path, name_routes, path_to, register_kind, route_memory,
+from .base import (Kind, advance, known_eta, known_path, label_routes, name_routes, path_to, register_kind, route_memory,
                    update_flows)
 
 FREE = (CState.IDLE, CState.REPOSITIONING)
@@ -245,6 +245,8 @@ class OnDemandKind(Kind):
             if cfg.observation.route_roads:
                 name_routes(w.net, rows, routes, anchor)
             context = {"routes": rows}
+            if cfg.observation.route_names:
+                label_routes(self.sim, cab.id, rows, routes, cab.target, context)
             basis = self.sim.traffic.explain(self.name, cab, routes, seen, reports)
             if basis:
                 context["traffic_knowledge"] = basis
@@ -296,6 +298,8 @@ class OnDemandKind(Kind):
             rec.result = f"on its way to {req.traveler}"
         elif action == "choose_route":
             cab.route_pending, cab.next_route_check = False, w.tick + w.ticks(cfg.reroute_check_seconds)
+            if "name" in rec.obs.context["routes"][args["route"]]:
+                sim.route_names.chose(cab.id, rec.obs.context["routes"][args["route"]]["name"])
             if args["route"] != 0:
                 cab.path = ([cab.link] if cab.link is not None else []) + list(rec.obs.aux["routes"][args["route"]].links)
                 cab.reroutes += 1

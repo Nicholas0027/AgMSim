@@ -1297,3 +1297,57 @@ def test_routes_can_be_shown_and_remembered_by_the_junctions_they_pass():
                    and "obs" in r for row in r["obs"]["context"]["routes"])
     with pytest.raises(ConfigError, match="find their own way"):
         Config.load("city_multimodal", ["agents.bus.observation.route_roads=true"])
+
+
+def test_routes_can_be_shown_and_remembered_by_the_name_of_their_way():
+    """A short name instead of the junctions: the same name for the same way at every decision, so that a
+    remembered route can be recognised; routes that share most of their roads share a name."""
+    names, roads = "agents.vehicle.observation.route_names=true", "agents.vehicle.observation.route_roads=true"
+    sim, res = run(SCENARIOS / "crossing.yaml", [names, roads])
+    shown = [r for r in res.records if r.get("type") == "decision" and r["kind"] == "vehicle" and "obs" in r]
+    bridge = {(3, 20), (20, 3)}                       # the blocked one
+    on, seen, left, returns = {}, {}, {}, 0
+    for r in shown:
+        o, car = r["obs"], r["agent"]
+        rows = o["context"]["routes"]
+        assert list(rows[0])[:2] == ["route", "name"] and "your memory" in o["context"]["route_names"]
+        if car in on:
+            assert rows[0]["name"] == on[car]         # the route it is on keeps the name it chose
+        over = [bool(bridge & set(zip(row["via_nodes"], row["via_nodes"][1:]))) for row in rows]
+        assert not ({row["name"] for row, o_ in zip(rows, over) if o_} & {row["name"] for row, o_ in zip(rows, over) if not o_})
+        for row in rows:                              # the very same roads offered again have the same name
+            assert seen.setdefault((car, tuple(row["via_nodes"])), row["name"]) == row["name"]
+        quickest = min(rows, key=lambda row: (row["eta_min"], row["route"]))
+        if not over[0] and over[quickest["route"]] and any("outcome" in item for item in o.get("memory", ())):
+            returns += 1                              # a way back after having been caught out: it has the name the car left
+            assert quickest["name"] in left[car]
+        chosen = r["decision"]["args"]["route"]
+        if chosen:
+            left.setdefault(car, set()).add(rows[0]["name"])
+        on[car] = rows[chosen]["name"]
+    assert returns > 20
+    changed = next(item for r in shown for item in r["obs"].get("memory", ()) if item.get("did") == "changed route")
+    assert list(changed["left_route"])[0] == "name" and changed["left_route"]["name"] != changed["took_route"]["name"]
+    assert max(len({name for (car, _), name in seen.items() if car == c}) for c in on) <= 4      # a few ways, not a name per route
+    # off by default, the run itself is the same either way, and only cars have ways
+    _, plain = run(SCENARIOS / "crossing.yaml")
+    assert plain.state_digest == res.state_digest
+    assert not any("name" in row or "route_names" in r["obs"]["context"] for r in plain.records
+                   if r.get("type") == "decision" and r["kind"] == "vehicle" and "obs" in r for row in r["obs"]["context"]["routes"])
+    assert sim._mechanisms("vehicle")["observation"]["route_names"] is True
+    with pytest.raises(ConfigError, match="find their own way"):
+        Config.load("city_multimodal", ["agents.bus.observation.route_names=true"])
+
+
+def test_a_new_destination_starts_new_names():
+    from types import SimpleNamespace
+    from agmsim.mechanisms import RouteNames
+    sim, _ = run(SCENARIOS / "crossing.yaml")
+    net = sim.world.net
+    names = RouteNames(sim)
+    a, b = net.route(0, 39).links, net.route(16, 39).links
+    route = lambda links: SimpleNamespace(links=tuple(links))
+    assert names.give("car", [route(a), route(b)], 39) == ["A", "B"]
+    assert names.give("car", [route(b[1:]), route(a)], 39) == ["B", "A"]            # further along, in another order
+    assert names.give("car", [route(a[:1] + b[1:])], 39) == ["B"]                    # mostly B's roads: B's way
+    assert names.give("car", [route(a)], 12) == ["C"]                                # the same roads to another place

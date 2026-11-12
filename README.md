@@ -143,15 +143,17 @@ go on when it decides:
 agents:
   vehicle:
     agency: L1
-    observation: {traffic: local, radius_m: 900, route_roads: false}      # traffic: none | local | global
+    observation: {traffic: local, radius_m: 900, route_names: false, route_roads: false}   # traffic: none | local | global
     memory: {decisions: 4, reasons: false, traffic_seconds: 600}
     interaction: {share_traffic: true, range_m: 500}
 ```
 
 - **Observation** — what it perceives now. `traffic` is how much of current road conditions a car sees
-  for itself: nothing, the roads within `radius_m`, or every road. With `route_roads` every route it is
-  offered names the junctions it passes, so that a route can be recognised from one decision to the next
-  (a route's number cannot: route 0 is always the route the car is on).
+  for itself: nothing, the roads within `radius_m`, or every road. A route's number does not say which
+  route it is (route 0 is always the route the car is on), so a car cannot tell from it whether an offered
+  route is one it remembers. Two settings let it: with `route_names` every route has the short name of its
+  *way*, which it keeps from one decision to the next (routes that share at least half their length are
+  one way and share the name); with `route_roads` every route lists the junctions it passes.
 - **Memory** — what it carries from the past. `decisions` is how many of its own latest decisions and
   outcomes it is shown at every decision point, and with `reasons` each decision comes with the reason
   its decision model gave at the time (these two apply to every kind); `traffic_seconds` is how long a
@@ -394,8 +396,8 @@ experiment asks whether rain, a match ending and a blocked road add up, on `agms
 it are each worth, on `agmsim run two_bridges`; `decision_memory` asks whether a car that keeps no road in
 mind is helped by recalling its own decisions (and `llm_decision_memory` whether a language model makes
 that use of them; `experiments/insitu_memory.py` puts the same decision points to a model one at a time,
-which costs far less, and `experiments/insitu_identity.py` checks that naming the junctions of each route
-does not change decisions it has nothing to do with). Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
+which costs far less, and `experiments/insitu_identity.py` checks whether telling a car which route is which
+changes decisions it has nothing to do with). Design and measured results: `docs/EXPERIMENTS_zh.md` (in Chinese). Two further experiments
 (`llm_alignment`, `llm_persuasion`) need a language model: `--llm qwen-local` (default), `--llm deepseek`,
 or both to compare them as arms; `--answer choice explain reason` adds the answer formats as arms.
 

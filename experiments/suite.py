@@ -265,6 +265,9 @@ EXPERIMENTS = {
             "{llm} · 路线带途经路口，记得做过什么和结果，并被要求先回看记忆": {
                 "agents.vehicle.use_llm": True, "agents.vehicle.observation.route_roads": True,
                 "agents.vehicle.llm_policy_params": {"reflect": True}},
+            "{llm} · 路线带代号，记得做过什么和结果，并被要求先回看记忆": {
+                "agents.vehicle.use_llm": True, "agents.vehicle.observation.route_names": True,
+                "agents.vehicle.llm_policy_params": {"reflect": True}},
         },
         "metrics": {"travelers.trip_time_s_mean": "平均出行时间(秒)", "travelers.trip_time_s_p90": "90 分位(秒)",
                     "vehicles.reroutes": "改道次数", "vehicles.vehicles_with_3plus_reroutes": "改道 3 次以上的车",

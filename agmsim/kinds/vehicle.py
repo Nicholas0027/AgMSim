@@ -23,7 +23,7 @@ from ..actions import Decision, Param
 from ..agency import AgencySpec
 from ..entities import TState, Vehicle, VState
 from ..observation import clock, km, minutes
-from .base import (Kind, advance, known_eta, known_path, name_routes, path_to, register_kind, route_memory,
+from .base import (Kind, advance, known_eta, known_path, label_routes, name_routes, path_to, register_kind, route_memory,
                    update_flows)
 
 OBJECTIVE_FAST = "Bring your owner to the destination as quickly as possible."
@@ -291,6 +291,8 @@ class VehicleKind(Kind):
         if cfg.observation.route_roads:
             name_routes(w.net, rows, routes, anchor)
         context = {"routes": rows}
+        if cfg.observation.route_names:
+            label_routes(self.sim, v.id, rows, routes, v.target, context)
         basis = self.sim.traffic.explain(self.name, v, routes, seen, reports)
         if basis:                                # what the estimates rest on, where the vehicle does not see for itself
             context["traffic_knowledge"] = basis
@@ -327,7 +329,10 @@ class VehicleKind(Kind):
             v.route_pending = False
             v.next_route_check = w.tick + w.ticks(self.cfg.reroute_check_seconds)
         if action == "choose_route":
-            v.reckoned = (w.tick, rec.obs.context["routes"][args["route"]]["eta_min"] * 60.0)
+            chosen = rec.obs.context["routes"][args["route"]]
+            v.reckoned = (w.tick, chosen["eta_min"] * 60.0)
+            if "name" in chosen:
+                sim.route_names.chose(v.id, chosen["name"])
             if "owner" in rec.obs.state and len(rec.obs.context["routes"]) > 1:
                 # How well did the vehicle serve its owner? Cost of each route in the owner's own terms.
                 routes = rec.obs.context["routes"]

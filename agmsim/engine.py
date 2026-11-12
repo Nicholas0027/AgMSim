@@ -34,7 +34,7 @@ from .agency import parse_agency
 from .config import Config, LLMCfg
 from .kinds.base import KINDS
 from .llm import build_llm_client
-from .mechanisms import Memories, TrafficKnowledge
+from .mechanisms import Memories, RouteNames, TrafficKnowledge
 from .network import build_network
 from .observation import Observation
 from .plans import hhmm, parse_clock
@@ -168,6 +168,7 @@ class Simulation:
             self.policies[agent_id] = self._make_policy(agent_id, spec)
         self.memories = Memories(self)              # each agent's latest decisions and outcomes
         self.traffic = TrafficKnowledge(self)       # what each driving agent knows about the roads
+        self.route_names = RouteNames(self)         # the names by which a driving agent knows the ways it was offered
         # simultaneous model calls within one decision phase: what the configured backends allow
         self._concurrency = max([c.cfg.max_concurrency for c in self._llm_clients.values()], default=1)
         self._recording = self.recorder.active
@@ -332,6 +333,8 @@ class Simulation:
             out["memory"]["reasons"] = True
         if self.kinds[name].drives:
             out["observation"] = {"traffic": kcfg.observation.traffic}
+            if kcfg.observation.route_names:
+                out["observation"]["route_names"] = True
             if kcfg.observation.route_roads:
                 out["observation"]["route_roads"] = True
             if kcfg.observation.traffic == "local":
