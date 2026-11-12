@@ -83,6 +83,14 @@ EXPERIMENTS = {
         "arms": VEHICLE_LEVELS,
         "metrics": LEVEL_METRICS,
     },
+    "vehicle_ladder": {
+        "question": "在一座每一级都有事可做的城里（一座桥出事故、一座桥收费、一座桥有公交专用道、充电紧张），"
+                    "车从 L0 到 L4 各贡献了什么？",
+        "scenario": "ladder.yaml",
+        "arms": {label: ov for label, ov in VEHICLE_LEVELS.items() if len(ov) == 1},      # the five levels
+        "metrics": {**LEVEL_METRICS, "bus.boardings": "公交上车人次", "vehicles.charge_queue_s_mean": "每次充电排队(秒)",
+                    "travelers.completion_rate": "完成率"},
+    },
     "incident": {
         "question": "事故发生时，是车有 agency 管用，还是运营方有 agency 管用？",
         "scenario": "incident.yaml",
