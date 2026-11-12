@@ -88,6 +88,8 @@ class RoadNetwork:
         self.stop_lines: dict[int, StopLine] = {}     # link id -> stop line at its end (signalised junctions only)
         self.ambient = 1.0                            # speed factor on every road (weather)
         self.nodes: dict[int, tuple[float, float]] = {}
+        self.names: dict[int, str] = {}               # what a node is called, where the network says
+        self.road_names: dict[tuple[int, int], str] = {}
         self.links: list[Link] = []
         self.out: dict[int, list[int]] = {}
         self.version = 0                      # bumped whenever a condition factor changes
@@ -333,10 +335,13 @@ class RoadNetwork:
     # ------------------------------------------------------------------ export
 
     def to_dict(self) -> dict:
-        return {
+        out = {
             "nodes": [[n, round(x, 2), round(y, 2)] for n, (x, y) in sorted(self.nodes.items())],
             "links": [[l.id, l.u, l.v, round(l.length, 2), round(l.speed, 3), l.lanes] for l in self.links],
         }
+        if self.names:
+            out["names"] = {str(n): name for n, name in sorted(self.names.items())}
+        return out
 
 
 # --------------------------------------------------------------------------- builders
@@ -438,3 +443,6 @@ def build_network(cfg, base_dir: Optional[str] = None) -> RoadNetwork:
     """Build the network named by ``cfg.type``; ``base_dir`` anchors relative file paths."""
     cfg.base_dir = base_dir
     return NETWORKS.get(cfg.type)(cfg)
+
+
+from . import montreal  # noqa: E402,F401  (registers the testbed network)

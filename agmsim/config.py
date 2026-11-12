@@ -579,8 +579,11 @@ def apply_overrides(data: dict, overrides: "list[str] | dict") -> dict:
 SCENARIO_DIR = Path(__file__).parent / "scenarios"
 
 
+TESTBED = "montreal"        # the scenario experiments are run on; listed first, so it is what the page opens with
+
+
 def list_scenarios() -> list[str]:
-    return sorted(p.stem for p in SCENARIO_DIR.glob("*.yaml"))
+    return sorted((p.stem for p in SCENARIO_DIR.glob("*.yaml")), key=lambda name: (name != TESTBED, name))
 
 
 def resolve_scenario(source: "str | Path") -> Path:

@@ -1351,3 +1351,23 @@ def test_a_new_destination_starts_new_names():
     assert names.give("car", [route(b[1:]), route(a)], 39) == ["B", "A"]            # further along, in another order
     assert names.give("car", [route(a[:1] + b[1:])], 39) == ["B"]                    # mostly B's roads: B's way
     assert names.give("car", [route(a)], 12) == ["C"]                                # the same roads to another place
+
+
+def test_the_testbed_is_a_simplified_montreal_with_every_kind_of_agent():
+    from agmsim.config import list_scenarios
+    from agmsim.montreal import NODE, NODES, ROADS
+    assert list_scenarios()[0] == "montreal"                     # what the page opens with
+    sim, res = run("montreal", ["simulation.duration_seconds=1200"])
+    net = sim.world.net
+    assert len(net.nodes) == len(NODES) == 37 and len(net.links) == 2 * len(ROADS) == 152
+    assert net.names[NODE["downtown"]] == "Downtown" and sim._header()["network"]["names"]["0"] == "Downtown"
+    # an island: the South Shore is reached over the crossings only
+    crossings = {"Champlain Bridge", "Victoria Bridge", "Jacques-Cartier Bridge", "Lafontaine Tunnel", "Mercier Bridge"}
+    south = {NODE[name] for name in ("longueuil", "brossard", "st_lambert", "boucherville", "kahnawake")}
+    laval = {NODE[name] for name in ("laval_w", "laval_c", "laval_e")}
+    into_south = {net.road_names[(link.u, link.v)] for link in net.links if link.v in south and link.u not in south | laval}
+    assert into_south == crossings
+    assert 20_000 < net.length(NODE["west_island"], NODE["downtown"]) < 32_000
+    assert set(sim.kinds) == {"traveler", "vehicle", "ondemand", "bus", "evcs", "signal", "operator"}
+    assert res.metrics["travelers"]["trips"] > 0 and res.metrics["outcomes"]["vmt_miles"] > 0
+

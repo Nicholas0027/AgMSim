@@ -18,8 +18,29 @@ a level-0 or a level-4 vehicle, and a rule can be compared with an LLM under ide
 
 This is an early prototype. See [Limitations](#limitations).
 
+## The testbed: a simplified Montreal
+
+Experiments are run on one network, in the way much of transport research uses Sioux Falls: `montreal`, a
+simplified Montreal of 37 nodes and 76 two-way roads (`agmsim/montreal.py`). It keeps what shapes traffic in
+the city: an island reached over nine bridges and one tunnel, a centre on its south side, the ring of
+expressways (A-40 Metropolitan, A-15 Decarie, Ville-Marie, A-25, A-20) and the arterials between them, with
+the South Shore and Laval at the far ends of the crossings. The scenario is a weekday morning, 07:00 to
+09:00, with every kind of agent the simulator has: 900 travellers who live where people live and go to named
+places (downtown offices, McGill, the airport, hospitals, markets), their cars, 60 on-demand cars, four
+transit lines on their own right of way, traffic lights in the inner city, seven charging stations, an
+orchestrator, and a crash on the Decarie expressway at 07:30.
+
+```bash
+agmsim run montreal                                   # the testbed as it is
+agmsim run montreal --set agents.vehicle.agency=L0    # change one kind's level, keep everything else
+```
+
+Positions, lengths, speeds and lanes are approximate values by class of road. It is an abstraction to
+experiment on, not a calibrated model of the city. The other packaged scenarios are small examples of single
+features; new experiments go on the testbed.
+
 **Try it without installing anything:** <https://nicholas0027.github.io/AgMSim/> is the web interface with
-the simulator running inside your browser. Pick a scenario (for example `evening_plans`), set the decision
+the simulator running inside your browser. It opens on the testbed (`montreal`); set the decision
 model and agency level of each kind of agent, press Run, and click any decision to see what the agent saw.
 To let a language model decide, choose `LLM` for a kind of agent and type your own API key (for example a
 DeepSeek key): the key stays in your browser tab and the calls go straight from your browser to the provider.
@@ -99,7 +120,7 @@ agents were asked and decided (`decisions`, `llm`), follow them.
 
 | Module | Part | Status |
 | - | - | - |
-| **Physical infrastructure** | road network (grid, two banks with bridges, or from a file) | done |
+| **Physical infrastructure** | road network (the Montreal testbed; also a grid, two banks with bridges, or from a file) | done |
 | | charging stations | done |
 | | external events (a road blocked or slowed; weather; a surge of trips from or to a place; a place closing early; a change of agency during the run) | done; not yet: outages of charging stations or bus lines |
 | | destinations as points of interest | done: named places with a type and opening hours; trips go to a place that fits their purpose, and activities of a day plan can take place at one |
@@ -394,7 +415,7 @@ down or move while free do to waiting and to the fleet, on `agmsim run city_onde
 experiment asks whether rain, a match ending and a blocked road add up, on `agmsim run town_places`; the
 `knowledge` and `knowledge_near` experiments ask what a car's sight, its memory and what other cars tell
 it are each worth, on `agmsim run two_bridges`; `vehicle_agency` changes nothing but the level of the
-private cars, from L0 to L4, on `agmsim run city_multimodal`; `decision_memory` asks whether a car that keeps no road in
+private cars, from L0 to L4, on the testbed (`agmsim run montreal`); `decision_memory` asks whether a car that keeps no road in
 mind is helped by recalling its own decisions (and `llm_decision_memory` whether a language model makes
 that use of them; `experiments/insitu_memory.py` puts the same decision points to a model one at a time,
 which costs far less, and `experiments/insitu_identity.py` checks whether telling a car which route is which

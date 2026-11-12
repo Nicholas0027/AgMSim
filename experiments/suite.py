@@ -65,31 +65,24 @@ LEVEL_METRICS = {"outcomes.wait_time_s_mean": "平均等待(秒)", "outcomes.vmt
                  "outcomes.traffic_speed_mph": "平均车速(英里/时)", "travelers.trip_time_s_mean": "平均出行时间(秒)",
                  "travelers.generalised_cost_usd_mean": "广义成本(美元)", "vehicles.reroutes": "改道次数",
                  "vehicles.tolls_usd": "收费总额(美元)", "vehicles.suggestions": "换乘提议", "vehicles.charge_stops": "充电出行次数",
-                 "vehicles.empty_km_share": "空驶占比", "operator.advisories_published": "协调者通告"}
+                 "vehicles.empty_km_share": "空驶占比", "vehicles.charge_queue_s_mean": "每次充电排队(秒)",
+                 "bus.boardings": "公交上车人次", "operator.advisories_published": "协调者通告"}
 
 EXPERIMENTS = {
     "vehicle_agency": {
-        "question": "同一座城，其他都不变，只把车的 agency 从 L0 调到 L4，系统表现怎么变？",
-        "scenario": "city_multimodal",                # a packaged scenario, by its name
-        "arms": VEHICLE_LEVELS,
+        "question": "蒙特利尔测试床，其他都不变，只把私家车的 agency 从 L0 调到 L4，系统表现怎么变？",
+        "scenario": "montreal",                       # the testbed, by its name
+        "arms": {label: ov for label, ov in VEHICLE_LEVELS.items() if len(ov) == 1},
         "metrics": LEVEL_METRICS,
     },
     "vehicle_agency_alone": {
-        "question": "同一座城，其他主体都不作为（协调者不发通告，收费固定，公交优先常开，出行者听车的），只改车的等级呢？",
-        "scenario": "city_multimodal",
+        "question": "同一个测试床，其他主体都不作为（协调者不发通告，市中心收费固定为 2 美元，出行者听车的），只改车的等级呢？",
+        "scenario": "montreal",
         "base": {"agents.traveler.agency": "L0", "agents.bus.agency": "L0", "agents.evcs.agency": "L0",
-                 "agents.operator.agency": "L0", "agents.operator.initial_toll": 0.6,
-                 "agents.operator.initial_bus_priority": True},
-        "arms": VEHICLE_LEVELS,
+                 "agents.ondemand.agency": "L0", "agents.signal.agency": "L0",
+                 "agents.operator.agency": "L0", "agents.operator.initial_toll": 2.0},
+        "arms": {label: ov for label, ov in VEHICLE_LEVELS.items() if len(ov) == 1},
         "metrics": LEVEL_METRICS,
-    },
-    "vehicle_ladder": {
-        "question": "在一座每一级都有事可做的城里（一座桥出事故、一座桥收费、一座桥有公交专用道、充电紧张），"
-                    "车从 L0 到 L4 各贡献了什么？",
-        "scenario": "ladder.yaml",
-        "arms": {label: ov for label, ov in VEHICLE_LEVELS.items() if len(ov) == 1},      # the five levels
-        "metrics": {**LEVEL_METRICS, "bus.boardings": "公交上车人次", "vehicles.charge_queue_s_mean": "每次充电排队(秒)",
-                    "travelers.completion_rate": "完成率"},
     },
     "incident": {
         "question": "事故发生时，是车有 agency 管用，还是运营方有 agency 管用？",
