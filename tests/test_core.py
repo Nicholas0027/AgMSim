@@ -1372,3 +1372,110 @@ def test_the_testbed_is_a_simplified_montreal_with_every_kind_of_agent():
     assert set(sim.kinds) == {"traveler", "vehicle", "ondemand", "bus", "evcs", "signal", "operator"}
     assert res.metrics["travelers"]["trips"] > 0 and res.metrics["outcomes"]["vmt_miles"] > 0
 
+
+
+# ---------------------------------------------------------------- what an agent is told: its goal and its prompt
+
+
+def test_a_kind_can_be_told_what_to_pursue():
+    """``objective`` is a sentence in the agent's state at every decision; without it a kind keeps its own."""
+    def first_states(overrides):
+        sim, res = run("montreal", ["simulation.duration_seconds=900", *overrides])
+        seen = {}
+        for rec in res.records:
+            if rec["type"] == "decision" and "obs" in rec:
+                seen.setdefault(rec["kind"], rec["obs"]["state"])
+        return sim, seen
+
+    sim, plain = first_states([])
+    assert plain["evcs"]["objective"] == sim.kinds["evcs"].objective and "objective" not in plain["traveler"]
+    car = next(iter(sim.world.vehicles))
+    assert sim.kinds["vehicle"].goal(car).startswith("Bring your owner")       # at L1 a car does not know its owner's preferences
+
+    told = "Keep the queue short; revenue comes second."
+    sim, own = first_states([f'agents.evcs.objective="{told}"', 'agents.traveler.objective="Arrive on time, whatever it costs."',
+                             "agents.vehicle.agency=L2"])
+    assert own["evcs"]["objective"] == told and own["traveler"]["objective"].startswith("Arrive on time")
+    assert own["operator"]["objective"] == plain["operator"]["objective"]      # the kinds not told otherwise keep their own
+    assert sim.kinds["vehicle"].goal(car).startswith("Act in your owner's interest")       # ... which may follow the level
+    # the on-demand cars' ready-made objectives go by their word; a sentence of one's own is taken as it is
+    for value, start in (("profit", "Maximise your own net earnings"), ('"Serve the hospitals first."', "Serve the hospitals")):
+        cabs = Simulation("montreal", overrides=[*QUIET, f"agents.ondemand.objective={value}"])
+        assert cabs.kinds["ondemand"].goal().startswith(start)
+        cabs.close()
+    with pytest.raises(ConfigError, match="sentence"):                         # one word alone is taken for a slip
+        Config.load("montreal", ["agents.evcs.objective=profti"])
+    with pytest.raises(ConfigError, match="balanced"):
+        Config.load("montreal", ["agents.ondemand.objective=profti"])
+
+
+def test_what_a_language_model_is_told_can_be_read_and_changed(monkeypatch, capsys):
+    """The prompt of every kind can be read without running anything, added to or replaced; a run sends that text."""
+    from agmsim import browser, llm
+    from agmsim.cli import main
+    from agmsim.prompts import told
+    from agmsim.server import RUNS
+
+    plain = told("montreal")
+    assert set(plain) == {"traveler", "vehicle", "ondemand", "bus", "evcs", "signal", "operator"}
+    car = plain["vehicle"]
+    assert car["system"] == car["generated"] and car["system"].startswith("You are the on-board decision-making agent")
+    assert car["goal"] == car["own_goal"] and plain["traveler"]["goal"] == ""      # a traveller is told who they are instead
+    assert "traffic lights" in plain["operator"]["system"]                          # the prompt of the scenario as it is set up
+    extra, own = "Stay off the bridges unless one saves five minutes.", "You drive a car. Answer with one JSON object."
+    added = told("montreal", [f'agents.vehicle.llm_policy_params.extra_instructions="{extra}"'])["vehicle"]
+    assert added["system"] == car["system"] + "\n\n" + extra and added["generated"] == car["generated"]
+    replaced = told("montreal", [f'agents.vehicle.llm_policy_params={{system_prompt: "{own}", extra_instructions: "{extra}"}}'])["vehicle"]
+    assert replaced["system"] == own + "\n\n" + extra and replaced["generated"] == car["generated"]
+    # nothing is asked of a model for this, so a hosted one without its key is no obstacle
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setattr(llm, "load_env_file", lambda *a, **k: None)
+    assert told("montreal", ["agents.vehicle.use_llm=true", "llm.preset=deepseek"])["vehicle"]["system"] == car["system"]
+
+    # the command line prints it
+    assert main(["prompt", "montreal", "evcs", "--set", 'agents.evcs.llm_policy_params.extra_instructions="Be fair."']) == 0
+    printed = capsys.readouterr().out
+    assert printed.startswith("===== evcs =====\ngoal: Maximise your revenue") and printed.rstrip().endswith("Be fair.")
+    assert "===== vehicle" not in printed and main(["prompt", "montreal", "tram"]) == 2
+
+    # the page asks for it with the settings of its form; settings that would not run come back as the reason
+    body = {"scenario": "montreal", "overrides": ['agents.evcs.objective="Keep the queue short; revenue comes second."']}
+    station = json.loads(browser.request("/api/prompts", json.dumps(body)))["kinds"]["evcs"]
+    assert station["goal"].startswith("Keep the queue short") and station["own_goal"].startswith("Maximise your revenue")
+    refused = json.loads(browser.request("/api/prompts", json.dumps({"scenario": "montreal", "overrides": ["agents.evcs.objective=x"]})))
+    assert "sentence" in refused["error"]
+
+    # in a run, a decision taken by a language model comes with the text the model was sent; any other does not
+    run_body = {"scenario": fx("demo_3x3"), "overrides": ["agents.vehicle.use_llm=true", "llm.backend=mock",
+                                                          f'agents.vehicle.llm_policy_params.extra_instructions="{extra}"']}
+    run_id = json.loads(browser.request("/api/run", json.dumps(run_body)))["id"]
+    while browser.advance(1.0):
+        pass
+    decisions = RUNS[run_id].recorder.decisions
+    asked = next(i for i, d in enumerate(decisions) if d["kind"] == "vehicle" and ((d.get("info") or {}).get("llm") or {}).get("calls"))
+    sent = json.loads(browser.request(f"/api/run/{run_id}/decision/{asked}"))["prompt"]
+    assert sent["system"].endswith(extra) and sent["user"].startswith("<observation>") and decisions[asked]["agent"] in sent["user"]
+    by_rule = next(i for i, d in enumerate(decisions) if d["kind"] == "traveler")
+    assert "prompt" not in json.loads(browser.request(f"/api/run/{run_id}/decision/{by_rule}"))
+    assert "prompt" not in decisions[asked]                                         # the record itself stays as it was written
+    # ... and a run's prompts can be asked for with the configuration the run was started with (what the guide does)
+    again = json.loads(browser.request("/api/prompts", json.dumps({"config": RUNS[run_id].recorder.header["config"]})))
+    assert again["kinds"]["vehicle"]["system"] == sent["system"]
+
+
+def test_weather_is_three_numbers_for_a_period_and_unusable_ones_are_refused():
+    """What the page's sliders set: how fast roads and walking are, how much longer waiting and walking feel, and when."""
+    sleet = ('[{"type":"weather","label":"sleet","at_seconds":0,"until_seconds":600,'
+             '"speed_factor":0.62,"walk_factor":0.8,"discomfort":2.2}]')
+    sim = Simulation(fx("demo_3x3"), overrides=[*QUIET, f"events={sleet}"])
+    sim.step()
+    assert sim.world.net.ambient == 0.62 and sim.world.walk_factor == 0.8
+    assert sim.world.environment == {"weather": "sleet", "roads_at_pct_of_normal_speed": 62,
+                                     "waiting_and_walking_feel_longer_by_factor": 2.2}
+    for _ in range(601):
+        sim.step()
+    assert sim.world.net.ambient == 1.0 and sim.world.walk_factor == 1.0 and sim.world.environment == {}
+    sim.close()
+    for bad in ('"walk_factor":0', '"speed_factor":-1', '"discomfort":0'):
+        with pytest.raises(ValueError, match="greater than 0"):
+            Simulation(fx("demo_3x3"), overrides=[*QUIET, 'events=[{"type":"weather","at_seconds":0,' + bad + "}]"])

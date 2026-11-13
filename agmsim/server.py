@@ -21,14 +21,15 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from . import kinds as _kinds, policies as _policies  # noqa: F401
-from . import assistant
+from . import assistant, prompts
 from .agency import LEVEL_NAMES
-from .config import DRIVING_KINDS, LLM_PRESETS, TESTBED, Config, list_scenarios
+from .config import DRIVING_KINDS, LLM_PRESETS, TESTBED, Config, ConfigError, list_scenarios
 from .network import build_network
 from .engine import Simulation
 from .kinds.base import KINDS
 from .llm import LLM_BACKENDS, load_env_file
 from .policies.base import available_policies, explain_policy
+from .policies.llm_policy import LLMPolicy, build_user_prompt
 from .recorder import Recorder
 
 WEB = Path(__file__).parent / "web"
@@ -163,6 +164,28 @@ def agent_story(run: "Run", agent_id: str) -> dict:
     return out
 
 
+def sent_to_model(run: "Run", decision: dict) -> Optional[dict]:
+    """The text a language model was sent for this decision: the system prompt and the message with what the
+    agent saw. None if no model was asked (a built-in model decided, or there was only one thing to do)."""
+    policy = run.sim.policies.get(decision["agent"]) if run.sim is not None else None
+    asked = ((decision.get("info") or {}).get("llm") or {}).get("calls")
+    if not isinstance(policy, LLMPolicy) or not asked or "obs" not in decision:
+        return None
+    return {"system": policy.system, "user": build_user_prompt(decision["obs"], (), policy.rationale, policy.memory)}
+
+
+def told(body: dict) -> dict:
+    """What a language model would be told for every kind of agent (see :func:`agmsim.prompts.told`).
+
+    ``body``: ``config`` (a whole configuration, such as the one a run was started with), or ``scenario``
+    and ``overrides`` as for a run. Settings that would not run come back as ``error``.
+    """
+    try:
+        return {"kinds": prompts.told(body.get("config") or body.get("scenario") or TESTBED, list(body.get("overrides") or []))}
+    except (ConfigError, ValueError, KeyError, TypeError) as exc:
+        return {"error": str(exc.args[0] if exc.args else exc)}
+
+
 def _knows(kcfg, kind: str) -> dict:
     """A kind's observation, memory and interaction settings, for the form."""
     out = {"decisions": int(kcfg.memory.decisions), "reasons": bool(kcfg.memory.reasons), "drives": kind in DRIVING_KINDS}
@@ -220,7 +243,10 @@ def route(method: str, path: str, query: Optional[dict] = None, body: Optional[d
             return 200, meta(online)
         if run is not None and len(parts) == 5 and parts[3] == "decision" and parts[4].isdigit():
             decisions, i = run.recorder.decisions, int(parts[4])
-            return (200, decisions[i]) if i < len(decisions) else (404, {})
+            if i >= len(decisions):
+                return 404, {}
+            sent = sent_to_model(run, decisions[i])
+            return 200, ({**decisions[i], "prompt": sent} if sent else decisions[i])
         if run is not None and len(parts) == 5 and parts[3] == "agent":
             story = agent_story(run, parts[4])
             return (200, story) if story else (404, {})
@@ -237,6 +263,8 @@ def route(method: str, path: str, query: Optional[dict] = None, body: Optional[d
         return 200, {"id": run_id}
     elif parts == ["api", "chat"]:               # the assistant: a request in words -> proposed settings
         return 200, assistant.configure(body or {})
+    elif parts == ["api", "prompts"]:            # what a language model is told for each kind, under these settings
+        return 200, told(body or {})
     elif run is not None and len(parts) == 4 and parts[3] == "stop":
         run.stop = True
         return 200, {"ok": True}

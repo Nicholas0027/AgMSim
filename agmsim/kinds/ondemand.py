@@ -35,6 +35,7 @@ class OnDemandKind(Kind):
     name = "ondemand"
     side = "machine"
     title = "On-demand car"
+    objective = OBJECTIVES["balanced"]
     drives = True
     role_prompt = (
         "You are the on-board decision-making agent of an on-demand car: a driverless car of a ride service. "
@@ -185,11 +186,16 @@ class OnDemandKind(Kind):
     def authority(self, agent_id, trigger):
         return self.allows(agent_id, "decline") if trigger == "proposal" else True
 
+    def goal(self, agent_id=""):
+        """One of the three ready-made objectives by its word (profit, service, balanced), or the scenario's own sentence."""
+        told = (self.cfg.objective or "").strip()
+        return OBJECTIVES.get(told, told) or self.objective
+
     def _state(self, cab) -> dict:
         w = self.world
         location = {"node": cab.node} if cab.link is None else {
             "between_nodes": [w.net.links[cab.link].u, w.net.links[cab.link].v]}
-        return {"status": cab.state.value, "location": location, "objective": OBJECTIVES[self.cfg.objective],
+        return {"status": cab.state.value, "location": location, "objective": self.goal(cab.id),
                 "driving_cost_usd_per_km": self.cfg.operating_cost_per_km,
                 "rides_so_far": cab.trips, "earned_usd": round(cab.revenue, 2)}
 

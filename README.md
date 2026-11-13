@@ -70,22 +70,27 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 `run` prints outcome metrics and writes `runs/<name>/` (config, trace, metrics). `serve` opens a local web
 interface (http://127.0.0.1:8765) on the testbed: pick for each kind of agent who decides (a built-in
 model or an LLM) and its agency level, watch the run and inspect any decision. Other commands: `agmsim list`, `agmsim matrix`, `agmsim replay`,
-`agmsim explain`.
+`agmsim explain`, `agmsim prompt`.
 
 What the page shows:
 
 - **Guide** (top right) — everything that is in the simulation, one entry each: the run, the trips, the outcome
   measures, the road network, places, events, transit lines, charging sites, junctions with lights, and every
   kind of agent. Click an entry to see its icon, what it is, what it may do (its functions, with those switched
-  on at its level marked), all its settings, and what it is doing in the run: how often it was asked and why,
+  on at its level marked), what it is told (its goal, and the prompt a language model gets before every
+  decision), all its settings, and what it is doing in the run: how often it was asked and why,
   what it chose, and its state at the moment shown on the map. A kind's name in the Agents table opens its entry.
 - **Agents** — who decides for each kind and how much it may decide. The page opens with a language model
   (DeepSeek Flash) deciding for travellers, private cars, on-demand cars, charging stations and the orchestrator;
   traffic lights and transit vehicles, which decide every few seconds, start on their built-in models. Three
   buttons switch every kind at once. A language model takes about a second per decision and the run waits for it:
   about half an hour for the testbed as the page opens, a few seconds with built-in models only. (On the command
-  line and in experiments the testbed runs on built-in models unless you say otherwise.)
-- **Events** — the scenario's own events can be switched off, and the weather set to rain or snow for the run.
+  line and in experiments the testbed runs on built-in models unless you say otherwise.) A kind decided by a
+  language model has a link **goal and prompt**: it shows the prompt as it will be sent, and lets you change
+  the kind's goal, add instructions to the prompt, or write the whole prompt yourself.
+- **Events** — the scenario's own events can be switched off. Weather is three numbers on sliders (how fast
+  roads are, how fast walking is, how much longer waiting and walking feel), for a period of the run, with
+  the word the agents are told; rain and snow are shortcuts.
 - **Assistant** — say what you want to run ("evening plans with 200 travellers, vehicles at L3 with 30%
   staying at L0, slow the bridge from 17:30 to 18:30, then run it") and a language model fills in the
   form. Its proposal is checked like any configuration before it is used (`agmsim/assistant.py`); what the
@@ -101,8 +106,9 @@ What the page shows:
   that moment, click to move the map there; a table view is one click away.
 - **Results** — headline figures, how trips were made, and how often each kind of agent used its authority.
 - **Decisions** — every decision, filterable by kind, by agent and by whether authority was used. A
-  selected decision shows why the agent was asked, what it could choose, what it chose and why, and the
-  agent's whole day (activities, trips and its other decisions) on a timeline.
+  selected decision shows why the agent was asked, what it could choose, what it chose and why, the
+  agent's whole day (activities, trips and its other decisions) on a timeline and, when a language model
+  decided, the text the model was sent, word for word.
 
 A kind of agent keeps one colour everywhere on the page; the palette was checked for colour-vision
 deficiencies in light and dark mode.
@@ -292,6 +298,39 @@ action and then one sentence of reason; `false` for the action only; `first` for
 the action. On the decision benchmark below the last one changes what models without a reasoning phase
 choose, not only what they say.
 
+### What a language model is told
+
+Before every decision the model gets a prompt that the simulator writes from what the kind declares about
+itself (who the agent is, why it may be asked, what each action means, the answer format), followed by what
+the agent sees at that moment. What it sees includes its **goal**: a sentence under `objective` in its state.
+Both can be read and changed, per kind:
+
+```bash
+.venv/bin/agmsim prompt montreal vehicle      # the goal and the prompt of the private cars
+```
+
+```yaml
+agents:
+  vehicle:
+    objective: "Get your owner there without using a bridge unless it saves ten minutes."
+    llm_policy_params:
+      extra_instructions: "Say in your reason which road you avoided."   # added at the end of the prompt
+      # system_prompt: "..."        # your own prompt in place of the simulator's
+```
+
+- `objective` is what the agents of the kind are told to pursue, in place of the kind's own goal. Travellers
+  have none of their own (they are told who they are and decide as that person would). For on-demand cars
+  the words `profit`, `service` and `balanced` stand for three ready-made goals.
+- `extra_instructions` are added at the end of the prompt; `system_prompt` takes the place of the simulator's
+  prompt. Keep its part on the answer format: a reply that cannot be read is asked for once more and then
+  left to the built-in model.
+- The built-in models follow their own rules and read neither (the on-demand cars' built-in model follows
+  the three ready-made goals).
+
+On the page the same is behind the link **goal and prompt** of a kind decided by a language model, and the
+Guide shows it for every kind. In Python, `agmsim.prompts.told("montreal")` returns the goal and the prompt
+of every kind.
+
 ### Making LLM runs faster
 
 A run waits for the model once per tick in which someone decides, so time is roughly
@@ -360,8 +399,9 @@ events:                                  # (the list is also accepted under its 
   place (`at: {poi: shop}`: the one that adds the least detour) and then has its opening hours. A traveller
   is told the name and type of the place they are heading for; `pois.visits`, `pois.found_closed` and the
   map show what happened there.
-- **Weather** slows every road and walking, and tells every agent so in its observation
-  (`context.environment`); the built-in choice model weighs waiting and walking more heavily while it lasts.
+- **Weather** slows every road (`speed_factor`) and walking (`walk_factor`), and tells every agent so in its
+  observation (`context.environment`, under the `label` given); the built-in choice model weighs waiting and
+  walking more heavily while it lasts (`discomfort`). The three numbers can take any value above 0.
 - **A surge** adds trips that all start from (or head to) one place within a period: a match ending.
 - **A road blocked or slowed**, as before. Who knows about it depends on the vehicles' and the
   orchestrator's agency.

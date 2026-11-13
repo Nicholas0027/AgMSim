@@ -39,8 +39,9 @@ record: {dir: runs}
 
 `agents.<kind>`, for every kind
 : `use_llm` and `non_llm_policy` (who decides), `agency` (a level, a list of permissions), `mix` (shares of
-  the kind with other settings), `policy_params` and `llm_policy_params`, and `observation`, `memory`,
-  `interaction` (see [](concepts/mechanisms.md)).
+  the kind with other settings), `policy_params` and `llm_policy_params`, `objective` (a sentence: what the
+  agents of the kind are told to pursue, in place of the kind's own goal; see [](guide/llm.md)), and
+  `observation`, `memory`, `interaction` (see [](concepts/mechanisms.md)).
 
 `agents.traveler`
 : `count`, `car_ownership`, `default_mode`, `personas`.
@@ -50,7 +51,7 @@ record: {dir: runs}
   `route_alternatives`.
 
 `agents.ondemand`
-: `fleet`, `depots`, `objective` (`profit`, `service`, `balanced`), fares.
+: `fleet`, `depots`, `objective` (`profit`, `service`, `balanced`, or a sentence of your own), fares.
 
 `agents.bus`
 : `lines` (stops as node ids, number of vehicles, capacity), `fare`, `max_access_m`.

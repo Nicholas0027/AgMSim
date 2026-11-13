@@ -34,6 +34,7 @@ class OperatorKind(Kind):
     name = "operator"
     side = "machine"
     title = "Network operator"
+    objective = OBJECTIVE
     role_prompt = (
         "You are the decision-making agent of the road-network operator. You can publish real-time traffic "
         "advisories, which let every vehicle route around congestion and incidents; switch transit priority on "
@@ -109,7 +110,7 @@ class OperatorKind(Kind):
             links = list(links)
             return round(100.0 * sum(l.flow * l.factor * l.ambient for l in links) / len(links)) if links else 100
 
-        state = {"objective": OBJECTIVE, "advisory_published": op.advisory, "bus_priority_on": op.bus_priority}
+        state = {"objective": self.goal(agent_id), "advisory_published": op.advisory, "bus_priority_on": op.bus_priority}
         context = {
             "reason": "link conditions changed" if op.incident_pending else "periodic review",
             "incidents": incidents[:12],

@@ -30,7 +30,9 @@ agents.traveler.count (integer): number of travellers
 agents.traveler.car_ownership (0 to 1): share of travellers who own a private agentic vehicle
 agents.traveler.default_mode (car | bus | walk | ride): how a traveller without authority travels; ride means calling an on-demand car
 agents.ondemand.fleet (integer): number of on-demand cars; 0 means there are none
-agents.ondemand.objective (profit | service | balanced): what the on-demand cars are told to pursue
+agents.ondemand.objective (profit | service | balanced, or a sentence of your own): what the on-demand cars are told to pursue
+agents.<kind>.objective (a sentence): what the agents of that kind are told to pursue, in place of the kind's own goal; they are shown it at every decision. A language model follows it; the built-in decision models do not read it
+agents.<kind>.llm_policy_params.extra_instructions (text): instructions added to the end of the prompt of the language model that decides for that kind (it matters only where use_llm is true)
 agents.<kind>.agency (L0 | L1 | L2 | L3 | L4): what that kind of agent may decide; see the levels above
 agents.<kind>.use_llm (true | false): true means the kind is decided by a language model
 agents.<kind>.non_llm_policy (a built-in decision model of that kind, listed above): used when use_llm is false, and as the fallback of a language model

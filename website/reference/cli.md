@@ -6,6 +6,7 @@ agmsim serve [--host HOST] [--port PORT]
 agmsim matrix <scenario> --factor KEY=V1,V2 [--factor ...] [--seeds N] [--workers N] [--metric M] [--out DIR]
 agmsim replay <run directory>
 agmsim explain <run directory> <agent> [--observations]
+agmsim prompt <scenario> [kind] [--set KEY=VALUE]...
 agmsim list
 ```
 
@@ -16,6 +17,7 @@ agmsim list
 | `matrix` | runs every combination of the factors' levels over common seeds; `--llm-2x2` adds the human and machine LLM switches as factors |
 | `replay` | re-executes a recorded run from its decisions and verifies the state after every tick |
 | `explain` | shows why an agent did what it did: every decision it was asked for, with `--observations` also what it saw |
+| `prompt` | prints what a language model is told for one kind of agent, or for every kind: its goal and the prompt it gets before every decision |
 | `list` | lists scenarios, kinds of agent, agency levels, decision models, presets and plug-ins |
 
 `<scenario>` is `montreal` or the path of a YAML file.

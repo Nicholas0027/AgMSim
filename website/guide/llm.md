@@ -41,6 +41,38 @@ API keys are read from the environment, or from a file named `.env` in the proje
 by git and a key is never written to a configuration, trace or log. `llm.max_calls` and `llm.budget_usd` cap
 spending.
 
+## What the model is told
+
+Before every decision the model gets a prompt that the simulator writes from what the kind declares about
+itself: who the agent is, why it may be asked, what each action means, and the answer format. It is followed
+by what the agent sees at that moment, which includes its **goal**: a sentence under `objective` in its state.
+Both can be read and changed, per kind.
+
+```bash
+.venv/bin/agmsim prompt montreal vehicle      # the goal and the prompt of the private cars
+```
+
+```yaml
+agents:
+  vehicle:
+    objective: "Get your owner there without using a bridge unless it saves ten minutes."
+    llm_policy_params:
+      extra_instructions: "Say in your reason which road you avoided."   # added at the end of the prompt
+      # system_prompt: "..."        # your own prompt in place of the simulator's
+```
+
+| Setting | What it changes |
+| - | - |
+| `objective` | what the agents of the kind are told to pursue, in place of the kind's own goal. Travellers have none of their own: they are told who they are and decide as that person would. For on-demand cars the words `profit`, `service` and `balanced` stand for three ready-made goals |
+| `llm_policy_params.extra_instructions` | text added at the end of the prompt |
+| `llm_policy_params.system_prompt` | your own prompt in place of the simulator's. Keep its part on the answer format: a reply that cannot be read is asked for once more and then left to the built-in model |
+
+The built-in models follow their own rules and read neither (the on-demand cars' built-in model follows the
+three ready-made goals). On the page, a kind decided by a language model has a link **goal and prompt**: it
+shows the prompt as it will be sent and lets you edit all three. The Guide shows the goal and the prompt of
+every kind, and a selected decision shows the text the model was sent for it, word for word. In Python,
+`agmsim.prompts.told("montreal")` returns the goal and the prompt of every kind.
+
 ## What the model is asked for
 
 The answer format is set per kind with `llm_policy_params: {rationale: ...}`:

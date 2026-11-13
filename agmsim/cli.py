@@ -1,4 +1,4 @@
-"""Command-line interface: ``agmsim run | matrix | replay | explain | list | serve``."""
+"""Command-line interface: ``agmsim run | matrix | replay | explain | prompt | list | serve``."""
 from __future__ import annotations
 
 import argparse
@@ -120,6 +120,22 @@ def cmd_explain(args) -> int:
     return 0
 
 
+def cmd_prompt(args) -> int:
+    """Print what a language model is told for one kind of agent, or for every kind of the scenario."""
+    from .prompts import told
+    kinds = told(args.config, args.set)
+    if args.kind and args.kind not in kinds:
+        raise ValueError(f"the scenario has no '{args.kind}'; its kinds of agent: {', '.join(kinds)}")
+    for name, info in kinds.items():
+        if args.kind in (None, name):
+            print(f"===== {name} =====")
+            print(f"goal: {info['goal'] or '(none: the kind states no objective)'}")
+            print(info["system"] if info["system"] is not None else
+                  f"(decided by the policy '{info['llm_policy']}', which writes its own prompt)")
+            print()
+    return 0
+
+
 def cmd_list(args) -> int:
     from . import kinds as _k, policies as _p  # noqa: F401
     from .agency import LEVEL_NAMES
@@ -182,6 +198,12 @@ def main(argv=None) -> int:
     p.add_argument("agent")
     p.add_argument("--observations", action="store_true", help="also print what the agent saw")
     p.set_defaults(fn=cmd_explain)
+
+    p = sub.add_parser("prompt", help="show what a language model is told for a kind of agent")
+    p.add_argument("config", help="YAML file or packaged scenario name")
+    p.add_argument("kind", nargs="?", help="one kind of agent (default: every kind of the scenario)")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="override a config value")
+    p.set_defaults(fn=cmd_prompt)
 
     p = sub.add_parser("list", help="list scenarios, agent kinds, agency levels and plugins")
     p.set_defaults(fn=cmd_list)

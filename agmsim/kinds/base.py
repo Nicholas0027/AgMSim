@@ -37,6 +37,7 @@ class Kind:
     side = "machine"                 # "human" or "machine": which LLM switch of the 2x2 design it belongs to
     title = ""
     role_prompt = ""                 # how an LLM decision model is told who it is
+    objective = ""                   # what an agent of this kind is told to pursue: a sentence in its state (see ``goal``)
     triggers: dict = {}              # trigger -> explanation (used in prompts and docs)
     actions: dict = {}               # action -> explanation
     agency: Optional[AgencySpec] = None
@@ -105,6 +106,16 @@ class Kind:
 
     def allows(self, agent_id: str, permission: str) -> bool:
         return self.sim.agency[agent_id].allows(permission)
+
+    def own_goal(self, agent_id: str = "") -> str:
+        """The kind's own sentence for what this agent pursues (a kind may make it depend on the agent's authority)."""
+        return self.objective
+
+    def goal(self, agent_id: str = "") -> str:
+        """What the agent is told to pursue, as shown in its state at every decision: the scenario's sentence
+        (``agents.<kind>.objective``) if it has one, else the kind's own. Empty: the kind states none."""
+        told = (getattr(self.cfg, "objective", None) or "").strip()
+        return told or self.own_goal(agent_id)
 
     def spec(self, action: str, *params: Param) -> ActionSpec:
         return ActionSpec(action, self.actions[action], tuple(params))

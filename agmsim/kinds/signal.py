@@ -36,6 +36,7 @@ class SignalKind(Kind):
     name = "signal"
     side = "machine"
     title = "Traffic light"
+    objective = OBJECTIVE
     role_prompt = (
         "You control the traffic lights of one road junction. The approaches form two phases, east-west and "
         "north-south; exactly one phase has green at a time. A green lets waiting vehicles through one after "
@@ -156,7 +157,7 @@ class SignalKind(Kind):
         sig = w.signals[agent_id]
         elapsed = (w.tick - sig.since) * w.dt
         demand, on = self.demand(sig), self._on_links()
-        state = {"junction_node": sig.node, "objective": OBJECTIVE, "green_now": sig.names[sig.phase],
+        state = {"junction_node": sig.node, "objective": self.goal(agent_id), "green_now": sig.names[sig.phase],
                  "green_for_s": round(elapsed), "min_green_s": cfg.min_green_seconds,
                  "max_green_s": cfg.max_green_seconds, "switching_costs_s": cfg.lost_seconds}
         context = {"phases": [

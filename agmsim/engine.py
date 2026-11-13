@@ -163,7 +163,7 @@ class Simulation:
                 non_llm = part.get("non_llm_policy", kcfg.non_llm_policy)
                 self.agency[agent_id] = parse_agency(kind.agency, part["agency"]) if "agency" in part else profile
                 self.specs[agent_id] = AgentSpec(name, use_llm, kcfg.llm_policy if use_llm else non_llm,
-                                                 getattr(kcfg, "objective", ""), non_llm, g)
+                                                 getattr(kcfg, "objective", None) or "", non_llm, g)
         for agent_id, spec in self.specs.items():
             self.policies[agent_id] = self._make_policy(agent_id, spec)
         self.memories = Memories(self)              # each agent's latest decisions and outcomes
@@ -284,9 +284,12 @@ class Simulation:
                 schedule.setdefault(at(item["at_seconds"]), []).append(
                     ("agency", item["kind"], item["agency"], item.get("agents")))
             elif kind == "weather":                 # slows every road and walking; waiting and walking feel longer
+                speed, walk, discomfort = (float(item.get(key, default)) for key, default in
+                                           (("speed_factor", 0.8), ("walk_factor", 0.9), ("discomfort", 1.5)))
+                if min(speed, walk, discomfort) <= 0:
+                    raise ValueError("a weather event's speed_factor, walk_factor and discomfort must be greater than 0")
                 schedule.setdefault(at(item["at_seconds"]), []).append(
-                    ("weather", str(item.get("label", "bad weather")), float(item.get("speed_factor", 0.8)),
-                     float(item.get("walk_factor", 0.9)), float(item.get("discomfort", 1.5))))
+                    ("weather", str(item.get("label", "bad weather")), speed, walk, discomfort))
                 if item.get("until_seconds") is not None:
                     schedule.setdefault(at(item["until_seconds"]), []).append(("weather", None, 1.0, 1.0, 1.0))
             elif kind == "poi_closure":             # a place closes at this time today, earlier than it said

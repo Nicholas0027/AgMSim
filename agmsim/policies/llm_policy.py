@@ -69,6 +69,18 @@ def build_system_prompt(kind, rationale=True) -> str:
     return "\n".join(lines)
 
 
+def compose_system_prompt(kind, rationale=True, system_prompt: str | None = None, extra_instructions: str = "",
+                          reflect: bool = False, **_other) -> str:
+    """The system prompt in force for one kind under its ``llm_policy_params``.
+
+    The generated prompt, or the scenario's own in its place (``system_prompt``), followed by what the
+    scenario adds: the instruction to read the memory first (``reflect``) and ``extra_instructions``.
+    """
+    text = system_prompt or build_system_prompt(kind, rationale)
+    added = "\n\n".join(part for part in (REFLECT if reflect else "", extra_instructions or "") if part)
+    return f"{text}\n\n{added}" if added else text
+
+
 def build_user_prompt(obs, history=(), rationale=True, memory=None) -> str:
     """``obs`` is an Observation or its dict form (as stored in a trace).
 
@@ -158,16 +170,13 @@ class LLMPolicy(Policy):
         super().__init__(**params)
         self.rationale = rationale_mode(rationale)
         self.memory = None if memory is None else max(0, int(memory))
-        self._system_override = system_prompt
-        self._extra = "\n\n".join(text for text in (REFLECT if reflect else "", extra_instructions) if text)
+        self._prompt = {"system_prompt": system_prompt, "extra_instructions": extra_instructions, "reflect": bool(reflect)}
 
     def bind(self, ctx):
         super().bind(ctx)
         self.llm = ctx.llm
         self.fallback = ctx.fallback_factory()
-        self.system = self._system_override or build_system_prompt(ctx.extras["kind"], self.rationale)
-        if self._extra:
-            self.system += "\n\n" + self._extra
+        self.system = compose_system_prompt(ctx.extras["kind"], self.rationale, **self._prompt)
         self.retries = int(self.llm.cfg.retries_on_invalid)
 
     def decide(self, obs):

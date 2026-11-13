@@ -21,6 +21,7 @@ class BusKind(Kind):
     name = "bus"
     side = "machine"
     title = "Bus"
+    objective = OBJECTIVE
     role_prompt = (
         "You are the on-board decision-making agent of a bus running a fixed circular line. At each stop, once "
         "boarding is finished, you decide whether to depart, to hold a little longer, or to depart and skip the "
@@ -163,7 +164,7 @@ class BusKind(Kind):
         )
         alight_next = sum(1 for tid in b.onboard if w.travelers[tid].bus["alight"] == nxt)
         state = {"line": b.line, "stop_node": stops[b.next_stop], "passengers_on_board": len(b.onboard),
-                 "capacity": b.capacity, "objective": OBJECTIVE}
+                 "capacity": b.capacity, "objective": self.goal(agent_id)}
         context = {
             "seconds_since_previous_bus_left_this_stop": None if last is None else round((w.tick - last) * w.dt),
             "target_headway_s": round(info["headway_s"]),

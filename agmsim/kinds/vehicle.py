@@ -47,6 +47,7 @@ class VehicleKind(Kind):
     name = "vehicle"
     side = "machine"
     title = "Agentic vehicle (AgV, private car)"
+    objective = OBJECTIVE_FAST
     drives = True
     role_prompt = (
         "You are the on-board decision-making agent of a privately owned agentic vehicle (AgV). You carry your "
@@ -184,6 +185,10 @@ class VehicleKind(Kind):
     def authority(self, agent_id, trigger):
         return True if trigger == "route" else self.allows(agent_id, "self_manage")
 
+    def own_goal(self, agent_id=""):
+        """A car that knows its owner's preferences acts for the owner; one that does not gets them there quickly."""
+        return OBJECTIVE_OWNER if agent_id and self.allows(agent_id, "preferences") else OBJECTIVE_FAST
+
     def _state(self, v) -> dict:
         w = self.world
         if v.link is None:
@@ -193,7 +198,7 @@ class VehicleKind(Kind):
             location = {"between_nodes": [link.u, link.v], "next_node": link.v}
         prefs = self.allows(v.id, "preferences")
         state = {"status": v.state.value, "location": location, "carrying_owner": v.passenger is not None,
-                 "destination_node": v.destination, "objective": OBJECTIVE_OWNER if prefs else OBJECTIVE_FAST,
+                 "destination_node": v.destination, "objective": self.goal(v.id),
                  "driving_cost_usd_per_km": self.cfg.operating_cost_per_km}
         if prefs:
             state["owner"] = w.travelers[v.owner].persona.to_dict()

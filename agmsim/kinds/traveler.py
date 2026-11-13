@@ -378,6 +378,9 @@ class TravelerKind(Kind):
     def _state(self, tr, trigger: str = "") -> dict:
         w = self.world
         state = {"status": tr.state.value, "persona": tr.persona.to_dict(), "owns_vehicle": tr.car is not None}
+        told = self.goal(tr.id)             # a traveller is told who they are; a scenario may add what to pursue
+        if told:
+            state["objective"] = told
         if tr.plan is not None:
             state["preferences"] = preferences(tr.persona.value_of_time, self.sim.cfg.scoring)
         if trigger == "plan_review":

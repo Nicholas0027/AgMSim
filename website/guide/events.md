@@ -33,11 +33,12 @@ events:
 | Event | What it does |
 | - | - |
 | `link_condition` | slows or blocks roads (`links` are pairs of node ids, `factor` the share of normal speed). Who knows about it depends on the cars' and the orchestrator's agency |
-| `weather` | slows every road and walking, and tells every agent so in its observation |
+| `weather` | slows every road (`speed_factor`) and walking (`walk_factor`), makes waiting and walking count for more in the built-in choice model (`discomfort`), and tells every agent so in its observation, under the `label` given. Any value above 0 |
 | `demand_surge` | adds trips that all start from, or head to, one place within a period |
 | `poi_closure` | closes a place early; those who may adapt their plans are told |
 | `set_agency` | changes the agency of a kind during the run |
 
 Times are seconds after the start of the run (06:00). The testbed has one event, the crash on the Decarie
-expressway at 07:30. On the page, **Events** switches it off and sets the weather to rain or snow; anything else
-is added with `--set events=[...]` or in a copy of the scenario.
+expressway at 07:30. On the page, **Events** switches it off and sets the weather: three sliders for the
+numbers above, the period, and the word the agents are told (rain and snow are shortcuts). Anything else is
+added with `--set events=[...]` or in a copy of the scenario.

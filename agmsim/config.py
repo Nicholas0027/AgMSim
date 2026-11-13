@@ -23,6 +23,7 @@ from typing import Any, Optional, get_type_hints
 import yaml
 
 EVENT_TYPES = ("link_condition", "set_agency", "weather", "demand_surge", "poi_closure")
+OBJECTIVE_WORDS = ("profit", "service", "balanced")     # the on-demand cars' ready-made objectives (agmsim.observation.OBJECTIVES)
 MACHINE_KINDS = ("vehicle", "bus", "evcs", "operator", "signal", "ondemand")
 KIND_ORDER = ("operator", "signal", "evcs", "traveler", "bus", "vehicle", "ondemand")   # order in which actions are applied
 
@@ -111,6 +112,7 @@ class AgentCfg:
     policy_params: dict = field(default_factory=dict)       # constructor arguments of the non-LLM policy
     llm_policy_params: dict = field(default_factory=dict)   # constructor arguments of the LLM policy
     agency: Any = "L0"                  # level name, list of permissions, or mapping of can_* flags
+    objective: Optional[str] = None     # a sentence: what the agents of this kind are told to pursue (default: the kind's own)
     llm: Optional[dict] = None          # per-kind override of the top-level ``llm`` block
     mix: list = field(default_factory=list)  # sub-populations: [{share: 0.3, agency: L1, use_llm: ..., non_llm_policy: ...}]
     # The agency mechanisms. They are kept by the framework, so every decision model is handed the same.
@@ -221,7 +223,7 @@ class OnDemandCfg(AgentCfg):
 
     fleet: int = 0                      # number of cars; 0: no on-demand service
     depots: list = field(default_factory=list)   # nodes at which the cars start (default: anywhere)
-    objective: str = "balanced"         # what the cars are told to pursue: profit | service | balanced
+    objective: Optional[str] = "balanced"   # what the cars are told to pursue: profit | service | balanced, or a sentence of your own
     base_fare: float = 2.0              # USD per ride ...
     fare_per_km: float = 1.0            # ... plus per km of the trip ...
     fare_per_minute: float = 0.3        # ... plus per minute of its free-flow driving time
@@ -429,9 +431,15 @@ class Config:
         _choice("llm.cassette_mode", self.llm.cassette_mode, ("auto", "replay", "record"))
         self.llm.resolved()     # rejects an unknown llm.preset
         _choice("agents.traveler.default_mode", self.agents.traveler.default_mode, ("car", "bus", "walk", "ride"))
-        _choice("agents.ondemand.objective", self.agents.ondemand.objective, ("profit", "service", "balanced"))
         for kind in KIND_ORDER:
             k, path = getattr(self.agents, kind), f"agents.{kind}"
+            told = k.objective              # a sentence of the scenario's own; one word alone is taken for a slip
+            if told is not None and not isinstance(told, str):
+                raise ConfigError(f"{path}.objective must be text: what the agents of this kind are told to pursue")
+            if told and len(told.split()) == 1 and not (kind == "ondemand" and told.strip() in OBJECTIVE_WORDS):
+                raise ConfigError(f"{path}.objective must be a sentence saying what the agents of this kind are to pursue"
+                                  + (f", or one of {list(OBJECTIVE_WORDS)}" if kind == "ondemand" else "")
+                                  + f", got {told!r}")
             _choice(f"{path}.observation.traffic", k.observation.traffic, ("none", "local", "global"))
             if k.observation.radius_m <= 0 or k.interaction.range_m <= 0:
                 raise ConfigError(f"{path}.observation.radius_m and {path}.interaction.range_m must be positive")

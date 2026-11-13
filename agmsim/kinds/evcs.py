@@ -22,6 +22,7 @@ class EvcsKind(Kind):
     name = "evcs"
     side = "machine"
     title = "Charging station (EVCS)"
+    objective = OBJECTIVE
     role_prompt = (
         "You are the decision-making agent of an electric-vehicle charging station used by private agentic "
         "vehicles. Vehicles that manage their own charging choose where to charge by looking at distance, price and queue, so a high price "
@@ -79,7 +80,7 @@ class EvcsKind(Kind):
         s = w.stations[agent_id]
         state = {"station": s.id, "node": s.node, "chargers": s.chargers, "power_kw": s.power_kw,
                  "base_price_usd_per_kwh": s.base_price, "current_price_usd_per_kwh": s.price,
-                 "objective": OBJECTIVE}
+                 "objective": self.goal(agent_id)}
         if trigger == "queue":
             rows = [{"vehicle_id": vid, "battery_pct": round(w.vehicles[vid].soc * 100),
                      "waited_min": minutes((w.tick - self._arrival.get(vid, w.tick)) * w.dt)} for vid in s.queue]
